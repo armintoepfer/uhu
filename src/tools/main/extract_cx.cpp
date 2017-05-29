@@ -93,26 +93,28 @@ static int Runner(const PacBio::CLI::Results& options)
     };
 
     auto query = BamQuery(options.PositionalArguments().front());
-    for (const auto& r : *query) {
-        const auto cx = static_cast<uint8_t>(r.LocalContextFlags());
-        cxPerZmw[r.HoleNumber()].emplace_back(cx);
-    }
 
     std::cerr << "zmw";
     for (int i = 0; i < 16; ++i)
         std::cerr << "\t" << i;
     std::cerr << std::endl;
 
+    int curZmw = -1;
     std::array<int, 16> cxUniq;
-    for (const auto& zmw_cxs : cxPerZmw) {
-        cxUniq.fill(0);
-        std::cerr << zmw_cxs.first;
-        for (const auto& cx : zmw_cxs.second) {
-            ++cxUniq[cx];
+    cxUniq.fill(0);
+
+    for (const auto& r : *query) {
+        if (curZmw == -1) {
+            curZmw = r.HoleNumber();
+        } else if (curZmw != r.HoleNumber()) {
+            std::cerr << r.HoleNumber();
+            for (const auto& cx : cxUniq)
+                std::cerr << "\t" << cx;
+            std::cerr << std::endl;
+            cxUniq.fill(0);
+            curZmw = r.HoleNumber();
         }
-        for (const auto& cx : cxUniq)
-            std::cerr << "\t" << cx;
-        std::cerr << std::endl;
+        ++cxUniq[static_cast<uint8_t>(r.LocalContextFlags())];
     }
 
     return EXIT_SUCCESS;
