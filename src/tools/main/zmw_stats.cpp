@@ -114,8 +114,8 @@ static int Runner(const PacBio::CLI::Results& options)
     StatsAcc acc;
 
     std::vector<int> subreadLengths;
-    int bq;
-    int bcf;
+    int bq = -1;
+    int bcf = -1;
 
     for (const auto& r : *query) {
         if (curZmw == -1) {
