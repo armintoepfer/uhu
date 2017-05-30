@@ -334,7 +334,8 @@ static int Runner(const PacBio::CLI::Results& options)
         auto query = BamQuery(datasetPath);
         for (auto r : *query) {
             if (!writer)
-                writer.reset(new BAM::BamWriter(datasetPath + "-out.bam", r.Header().DeepCopy()));
+                writer.reset(new BAM::BamWriter("out-" + std::to_string(counter++) + ".bam",
+                                                r.Header().DeepCopy()));
             BarcodeHit bh = SimdNeedleWunschAlignment(r.Sequence(), barcodes);
             if (bh.ClipEnd - bh.ClipStart >= 50) {
                 r.Clip(BAM::ClipType::CLIP_TO_QUERY, bh.ClipStart, bh.ClipEnd);
