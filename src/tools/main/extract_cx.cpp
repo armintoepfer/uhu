@@ -97,7 +97,7 @@ static int Runner(const PacBio::CLI::Results& options)
     std::cerr << "zmw";
     for (int i = 0; i < 16; ++i)
         std::cerr << "\t" << i;
-    std::cerr << std::endl;
+    std::cerr << "\tbq" << std::endl;
 
     int curZmw = -1;
     std::array<int, 16> cxUniq;
@@ -110,6 +110,10 @@ static int Runner(const PacBio::CLI::Results& options)
             std::cerr << r.HoleNumber();
             for (const auto& cx : cxUniq)
                 std::cerr << "\t" << cx;
+            if (r.HasBarcodeQuality())
+                std::cerr << "\t" << static_cast<int>(r.BarcodeQuality());
+            else
+                std::cerr << "\t-1";
             std::cerr << std::endl;
             cxUniq.fill(0);
             curZmw = r.HoleNumber();
