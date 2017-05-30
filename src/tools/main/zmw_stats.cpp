@@ -36,12 +36,16 @@
 // Author: Armin Töpfer
 
 #include <exception>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <boost/accumulators/accumulators.hpp>
+#include <boost/accumulators/statistics.hpp>
 
 #include <pbcopper/cli/CLI.h>
 #include <pbcopper/utility/FileUtils.h>
@@ -97,28 +101,47 @@ static int Runner(const PacBio::CLI::Results& options)
     std::cerr << "zmw";
     for (int i = 0; i < 16; ++i)
         std::cerr << "\t" << i;
-    std::cerr << "\tbq" << std::endl;
+    std::cerr << "\tbq\tseq_count\tseq_mean\tseq_median\tseq_sd" << std::endl;
 
     int curZmw = -1;
     std::array<int, 16> cxUniq;
     cxUniq.fill(0);
+    std::vector<int> seqLengths;
+
+    using namespace boost::accumulators;
+    using StatsAcc =
+        accumulator_set<int, features<tag::count, tag::mean, tag::median, tag::variance>>;
+    StatsAcc acc;
+
+    std::vector<int> subreadLengths;
 
     for (const auto& r : *query) {
         if (curZmw == -1) {
             curZmw = r.HoleNumber();
         } else if (curZmw != r.HoleNumber()) {
-            std::cerr << r.HoleNumber();
+            std::cerr << curZmw;
             for (const auto& cx : cxUniq)
                 std::cerr << "\t" << cx;
             if (r.HasBarcodeQuality())
                 std::cerr << "\t" << static_cast<int>(r.BarcodeQuality());
             else
                 std::cerr << "\t-1";
+            std::cerr << "\t" << count(acc) << "\t" << mean(acc) << "\t" << median(acc) << "\t"
+                      << std::sqrt(variance(acc));
             std::cerr << std::endl;
+
+            std::ofstream out(std::to_string(curZmw) + ".subreads");
+            for (const auto& s : subreadLengths)
+                out << s << std::endl;
+
             cxUniq.fill(0);
             curZmw = r.HoleNumber();
+            acc = StatsAcc();
+            subreadLengths.clear();
         }
         ++cxUniq[static_cast<uint8_t>(r.LocalContextFlags())];
+        acc(r.Sequence().size());
+        subreadLengths.emplace_back(r.Sequence().size());
     }
 
     return EXIT_SUCCESS;
