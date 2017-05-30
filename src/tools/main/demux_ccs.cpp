@@ -60,7 +60,7 @@
 #include <pbbam/PbiFilterQuery.h>
 
 namespace PacBio {
-namespace Cleric {
+namespace Demux {
 
 struct Barcode
 {
@@ -181,43 +181,53 @@ std::pair<int, int> SimdNeedleWunschAlignment(const std::string& target,
                                     targetLength - alignerEndBegin);
     StripedSmithWaterman::Filter filter;
 
-    auto AlignTo = [&queries, &filter, &barcodeLength](StripedSmithWaterman::Aligner& aligner) {
-        std::vector<int> scores;
-        scores.resize(queries.size());
-        std::vector<int> scoresRev;
-        scoresRev.resize(queries.size());
+    auto AlignForward = [&filter](StripedSmithWaterman::Aligner& aligner, const Barcode& query) {
+        StripedSmithWaterman::Alignment alignment;
+        aligner.Align(query.Bases.c_str(), filter, &alignment);
+        return alignment.sw_score;
+    };
+
+    auto AlignRC = [&filter](StripedSmithWaterman::Aligner& aligner, const Barcode& query) {
+        StripedSmithWaterman::Alignment alignment;
+        auto revComp = ReverseComplement(query.Bases);
+        aligner.Align(revComp.c_str(), filter, &alignment);
+        return alignment.sw_score;
+    };
+
+    auto AlignTo = [&AlignForward, &AlignRC, &queries, &filter,
+                    &barcodeLength](StripedSmithWaterman::Aligner& aligner) {
+        std::vector<int> scores(queries.size(), 0);
+        std::vector<int> scoresRev(queries.size(), 0);
 
         for (size_t i = 0; i < queries.size(); ++i) {
-            StripedSmithWaterman::Alignment alignment;
-            aligner.Align(queries[i].Bases.c_str(), filter, &alignment);
-            scores[i] = alignment.sw_score;
-
-            StripedSmithWaterman::Alignment alignmentRev;
-            auto revComp = ReverseComplement(queries[i].Bases);
-            aligner.Align(revComp.c_str(), filter, &alignmentRev);
-            scoresRev[i] = alignmentRev.sw_score;
+            scores[i] = AlignForward(aligner, queries[i]);
+            scoresRev[i] = AlignRC(aligner, queries[i]);
         }
 
         return std::make_pair(scores, scoresRev);
     };
 
-    std::vector<int> scoresBegin;
-    std::vector<int> scoresRevBegin;
-    std::tie(scoresBegin, scoresRevBegin) = AlignTo(alignerBegin);
+    auto ComputeCombinedScore = [&AlignForward, &AlignRC, &AlignTo, &alignerBegin, &alignerEnd](
+        std::vector<int>* scores, std::vector<int>* scoresRev) {
+        std::vector<int> scoresBegin;
+        std::vector<int> scoresRevBegin;
+        std::tie(scoresBegin, scoresRevBegin) = AlignTo(alignerBegin);
 
-    std::vector<int> scoresEnd;
-    std::vector<int> scoresRevEnd;
-    std::tie(scoresEnd, scoresRevEnd) = AlignTo(alignerEnd);
+        std::vector<int> scoresEnd;
+        std::vector<int> scoresRevEnd;
+        std::tie(scoresEnd, scoresRevEnd) = AlignTo(alignerEnd);
 
+        assert(scoresBegin.size() == scoresRevEnd.size());
+        for (size_t i = 0; i < scoresBegin.size(); ++i)
+            scores->emplace_back((scoresBegin.at(i) + scoresRevEnd.at(i)) / 2);
+
+        assert(scoresRevBegin.size() == scoresRevEnd.size());
+        for (size_t i = 0; i < scoresBegin.size(); ++i)
+            scoresRev->emplace_back((scoresRevBegin.at(i) + scoresEnd.at(i)) / 2);
+    };
     std::vector<int> scores;
-    assert(scoresBegin.size() == scoresRevEnd.size());
-    for (size_t i = 0; i < scoresBegin.size(); ++i)
-        scores.emplace_back((scoresBegin.at(i) + scoresRevEnd.at(i)) / 2);
-
     std::vector<int> scoresRev;
-    assert(scoresRevBegin.size() == scoresRevEnd.size());
-    for (size_t i = 0; i < scoresBegin.size(); ++i)
-        scoresRev.emplace_back((scoresRevBegin.at(i) + scoresEnd.at(i)) / 2);
+    ComputeCombinedScore(&scores, &scoresRev);
 
     auto GetBestIndex = [&barcodeLength](std::vector<int>& v) {
         std::vector<size_t> idx(v.size());
@@ -230,9 +240,9 @@ std::pair<int, int> SimdNeedleWunschAlignment(const std::string& target,
 
     int forwardScore;
     int forwardIdx;
+    std::tie(forwardIdx, forwardScore) = GetBestIndex(scores);
     int revScore;
     int revIdx;
-    std::tie(forwardIdx, forwardScore) = GetBestIndex(scores);
     std::tie(revIdx, revScore) = GetBestIndex(scoresRev);
 
     int idx;
@@ -292,5 +302,5 @@ static int Runner(const PacBio::CLI::Results& options)
 // Entry point
 int main(int argc, char* argv[])
 {
-    return PacBio::CLI::Run(argc, argv, PacBio::Cleric::CreateCLI(), &PacBio::Cleric::Runner);
+    return PacBio::CLI::Run(argc, argv, PacBio::Demux::CreateCLI(), &PacBio::Demux::Runner);
 }
