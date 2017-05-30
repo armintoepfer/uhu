@@ -52,6 +52,7 @@
 #include <pbcopper/utility/FileUtils.h>
 
 #include <pbbam/BamReader.h>
+#include <pbbam/BamWriter.h>
 #include <pbbam/Cigar.h>
 #include <pbbam/DataSet.h>
 #include <pbbam/EntireFileQuery.h>
@@ -67,6 +68,25 @@ struct Barcode
     Barcode(std::string name, std::string bases) : Name(name), Bases(bases) {}
     std::string Name;
     std::string Bases;
+};
+
+struct BarcodeHit
+{
+    BarcodeHit(int idx, int bq, int clipStart, int clipEnd)
+        : Idx(idx), Bq(bq), ClipStart(clipStart), ClipEnd(clipEnd)
+    {
+    }
+    uint16_t Idx;
+    uint8_t Bq;
+    int ClipStart;
+    int ClipEnd;
+
+    friend std::ostream& operator<<(std::ostream& stream, const BarcodeHit& bh)
+    {
+        stream << bh.Idx << "\t" << static_cast<int>(bh.Bq) << "\t" << bh.ClipStart << "\t"
+               << bh.ClipEnd;
+        return stream;
+    }
 };
 
 static PacBio::CLI::Interface CreateCLI()
@@ -164,8 +184,7 @@ static std::string ReverseComplement(const std::string& input)
     return output;
 }
 
-std::pair<int, int> SimdNeedleWunschAlignment(const std::string& target,
-                                              const std::vector<Barcode>& queries)
+BarcodeHit SimdNeedleWunschAlignment(const std::string& target, const std::vector<Barcode>& queries)
 {
     int barcodeLength = queries.front().Bases.size();
     int barcodeLengthWSpacing = barcodeLength * 1.2;
@@ -184,14 +203,14 @@ std::pair<int, int> SimdNeedleWunschAlignment(const std::string& target,
     auto AlignForward = [&filter](StripedSmithWaterman::Aligner& aligner, const Barcode& query) {
         StripedSmithWaterman::Alignment alignment;
         aligner.Align(query.Bases.c_str(), filter, &alignment);
-        return alignment.sw_score;
+        return alignment;
     };
 
     auto AlignRC = [&filter](StripedSmithWaterman::Aligner& aligner, const Barcode& query) {
         StripedSmithWaterman::Alignment alignment;
         auto revComp = ReverseComplement(query.Bases);
         aligner.Align(revComp.c_str(), filter, &alignment);
-        return alignment.sw_score;
+        return alignment;
     };
 
     auto AlignTo = [&AlignForward, &AlignRC, &queries, &filter,
@@ -200,8 +219,8 @@ std::pair<int, int> SimdNeedleWunschAlignment(const std::string& target,
         std::vector<int> scoresRev(queries.size(), 0);
 
         for (size_t i = 0; i < queries.size(); ++i) {
-            scores[i] = AlignForward(aligner, queries[i]);
-            scoresRev[i] = AlignRC(aligner, queries[i]);
+            scores[i] = AlignForward(aligner, queries[i]).sw_score;
+            scoresRev[i] = AlignRC(aligner, queries[i]).sw_score;
         }
 
         return std::make_pair(scores, scoresRev);
@@ -225,6 +244,7 @@ std::pair<int, int> SimdNeedleWunschAlignment(const std::string& target,
         for (size_t i = 0; i < scoresBegin.size(); ++i)
             scoresRev->emplace_back((scoresRevBegin.at(i) + scoresEnd.at(i)) / 2);
     };
+
     std::vector<int> scores;
     std::vector<int> scoresRev;
     ComputeCombinedScore(&scores, &scoresRev);
@@ -247,15 +267,40 @@ std::pair<int, int> SimdNeedleWunschAlignment(const std::string& target,
 
     int idx;
     int score;
+    int clipStart;
+    int clipEnd;
     if (forwardScore > revScore) {
         score = forwardScore;
         idx = forwardIdx;
+        auto alignmentTmp = AlignForward(alignerBegin, queries[idx]);
+        clipStart = alignmentTmp.ref_end;
+
+        alignmentTmp = AlignRC(alignerEnd, queries[idx]);
+        clipEnd = alignerEndBegin + alignmentTmp.ref_begin;
+
+#if 0
+        std::cerr << "Best Smith-Waterman score:\t" << alignmentTmp.sw_score << std::endl
+                  << "Next-best Smith-Waterman score:\t" << alignmentTmp.sw_score_next_best
+                  << std::endl
+                  << "Reference start:\t" << alignmentTmp.ref_begin << std::endl
+                  << "Reference end:\t" << alignmentTmp.ref_end << std::endl
+                  << "Query start:\t" << alignmentTmp.query_begin << std::endl
+                  << "Query end:\t" << alignmentTmp.query_end << std::endl
+                  << "Next-best reference end:\t" << alignmentTmp.ref_end_next_best << std::endl
+                  << "Number of mismatches:\t" << alignmentTmp.mismatches << std::endl
+                  << "Cigar: " << alignmentTmp.cigar_string << std::endl;
+#endif
     } else {
         score = revScore;
         idx = revIdx;
+        auto alignmentTmp = AlignRC(alignerBegin, queries[idx]);
+        clipStart = alignmentTmp.ref_end;
+
+        alignmentTmp = AlignForward(alignerEnd, queries[idx]);
+        clipEnd = alignerEndBegin + alignmentTmp.ref_begin;
     }
 
-    return std::make_pair(idx, score);
+    return BarcodeHit(idx, score, clipStart, clipEnd);
 }
 
 static int Runner(const PacBio::CLI::Results& options)
@@ -282,16 +327,24 @@ static int Runner(const PacBio::CLI::Results& options)
         return query;
     };
 
+    std::unique_ptr<BAM::BamWriter> writer;
     int counter = 0;
-    std::cout << "ZMW\tIndex\tScore" << std::endl;
+    std::cout << "ZMW\tIndex\tScore\tClipStar\tClipEnd" << std::endl;
     for (const auto& datasetPath : datasetPaths) {
         auto query = BamQuery(datasetPath);
-        for (const auto& r : *query) {
-            int idx;
-            int score;
-            std::tie(idx, score) = SimdNeedleWunschAlignment(r.Sequence(), barcodes);
-            std::cout << r.FullName() << "\t" << idx << "\t" << score << std::endl;
+        for (auto r : *query) {
+            if (!writer)
+                writer.reset(new BAM::BamWriter(datasetPath + "-out.bam", r.Header().DeepCopy()));
+            BarcodeHit bh = SimdNeedleWunschAlignment(r.Sequence(), barcodes);
+            if (bh.ClipEnd - bh.ClipStart >= 50) {
+                r.Clip(BAM::ClipType::CLIP_TO_QUERY, bh.ClipStart, bh.ClipEnd);
+                r.Barcodes(std::make_pair(bh.Idx, bh.Idx));
+                r.BarcodeQuality(bh.Bq);
+                writer->Write(r);
+            }
+            std::cout << r.FullName() << "\t" << bh << std::endl;
         }
+        writer.reset(nullptr);
     }
 
     return EXIT_SUCCESS;
