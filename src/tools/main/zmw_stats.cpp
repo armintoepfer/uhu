@@ -101,7 +101,7 @@ static int Runner(const PacBio::CLI::Results& options)
     std::cerr << "zmw";
     for (int i = 0; i < 16; ++i)
         std::cerr << "\t" << i;
-    std::cerr << "\tbq\tseq_count\tseq_mean\tseq_median\tseq_sd" << std::endl;
+    std::cerr << "\tbcf\tbq\tseq_count\tseq_mean\tseq_median\tseq_sd" << std::endl;
 
     int curZmw = -1;
     std::array<int, 16> cxUniq;
@@ -114,6 +114,8 @@ static int Runner(const PacBio::CLI::Results& options)
     StatsAcc acc;
 
     std::vector<int> subreadLengths;
+    int bq;
+    int bcf;
 
     for (const auto& r : *query) {
         if (curZmw == -1) {
@@ -122,10 +124,7 @@ static int Runner(const PacBio::CLI::Results& options)
             std::cerr << curZmw;
             for (const auto& cx : cxUniq)
                 std::cerr << "\t" << cx;
-            if (r.HasBarcodeQuality())
-                std::cerr << "\t" << static_cast<int>(r.BarcodeQuality());
-            else
-                std::cerr << "\t-1";
+            std::cerr << "\t" << bcf << "\t" << bq;
             std::cerr << "\t" << count(acc) << "\t" << mean(acc) << "\t" << median(acc) << "\t"
                       << std::sqrt(variance(acc));
             std::cerr << std::endl;
@@ -142,6 +141,13 @@ static int Runner(const PacBio::CLI::Results& options)
         ++cxUniq[static_cast<uint8_t>(r.LocalContextFlags())];
         acc(r.Sequence().size());
         subreadLengths.emplace_back(r.Sequence().size());
+        if (r.HasBarcodeQuality()) {
+            bcf = r.BarcodeForward();
+            bq = static_cast<int>(r.BarcodeQuality());
+        } else {
+            bq = -1;
+            bcf = -1;
+        }
     }
 
     return EXIT_SUCCESS;

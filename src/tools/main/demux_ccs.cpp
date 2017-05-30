@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2017, Pacific Biosciences of California, Inc.
+// Copyright (c) 2017, Pacific Biosciences of California, Inc.
 //
 // All rights reserved.
 //
@@ -164,16 +164,19 @@ static std::string ReverseComplement(const std::string& input)
     return output;
 }
 
-void SimdNeedleWunschAlignment(const std::string& target, const std::vector<Barcode>& queries)
+std::pair<int, int> SimdNeedleWunschAlignment(const std::string& target,
+                                              const std::vector<Barcode>& queries)
 {
-    int barcodeLength = queries.front().Bases.size() * 1.5;
+    int barcodeLength = queries.front().Bases.size();
+    int barcodeLengthWSpacing = barcodeLength * 1.2;
     int targetLength = target.size();
 
     StripedSmithWaterman::Aligner alignerBegin;
-    alignerBegin.SetReferenceSequence(target.c_str(), std::min(targetLength, barcodeLength));
+    alignerBegin.SetReferenceSequence(target.c_str(),
+                                      std::min(targetLength, barcodeLengthWSpacing));
 
     StripedSmithWaterman::Aligner alignerEnd;
-    auto alignerEndBegin = std::max(targetLength - barcodeLength, 0);
+    auto alignerEndBegin = std::max(targetLength - barcodeLengthWSpacing, 0);
     alignerEnd.SetReferenceSequence(target.c_str() + alignerEndBegin,
                                     targetLength - alignerEndBegin);
     StripedSmithWaterman::Filter filter;
@@ -195,24 +198,54 @@ void SimdNeedleWunschAlignment(const std::string& target, const std::vector<Barc
             scoresRev[i] = alignmentRev.sw_score;
         }
 
-        auto GetBestIndex = [](std::vector<int>& v) {
-            // initialize original index locations
-            std::vector<size_t> idx(v.size());
-            std::iota(idx.begin(), idx.end(), 0);
-
-            // sort indexes based on comparing values in v
-            std::sort(idx.begin(), idx.end(), [&v](size_t i1, size_t i2) { return v[i1] > v[i2]; });
-
-            std::cerr << idx.front() << " => " << v.at(idx.front()) << std::endl;
-        };
-        GetBestIndex(scores);
-        GetBestIndex(scoresRev);
+        return std::make_pair(scores, scoresRev);
     };
 
-    AlignTo(alignerBegin);
-    AlignTo(alignerEnd);
+    std::vector<int> scoresBegin;
+    std::vector<int> scoresRevBegin;
+    std::tie(scoresBegin, scoresRevBegin) = AlignTo(alignerBegin);
 
-    std::cerr << barcodeLength << std::endl;
+    std::vector<int> scoresEnd;
+    std::vector<int> scoresRevEnd;
+    std::tie(scoresEnd, scoresRevEnd) = AlignTo(alignerEnd);
+
+    std::vector<int> scores;
+    assert(scoresBegin.size() == scoresRevEnd.size());
+    for (size_t i = 0; i < scoresBegin.size(); ++i)
+        scores.emplace_back((scoresBegin.at(i) + scoresRevEnd.at(i)) / 2);
+
+    std::vector<int> scoresRev;
+    assert(scoresRevBegin.size() == scoresRevEnd.size());
+    for (size_t i = 0; i < scoresBegin.size(); ++i)
+        scoresRev.emplace_back((scoresRevBegin.at(i) + scoresEnd.at(i)) / 2);
+
+    auto GetBestIndex = [&barcodeLength](std::vector<int>& v) {
+        std::vector<size_t> idx(v.size());
+        std::iota(idx.begin(), idx.end(), 0);
+        std::sort(idx.begin(), idx.end(), [&v](size_t i1, size_t i2) { return v[i1] > v[i2]; });
+
+        int bq = std::round(100.0 * v.at(idx.front()) / (barcodeLength * 2.0));
+        return std::make_pair(idx.front(), bq);
+    };
+
+    int forwardScore;
+    int forwardIdx;
+    int revScore;
+    int revIdx;
+    std::tie(forwardIdx, forwardScore) = GetBestIndex(scores);
+    std::tie(revIdx, revScore) = GetBestIndex(scoresRev);
+
+    int idx;
+    int score;
+    if (forwardScore > revScore) {
+        score = forwardScore;
+        idx = forwardIdx;
+    } else {
+        score = revScore;
+        idx = revIdx;
+    }
+
+    return std::make_pair(idx, score);
 }
 
 static int Runner(const PacBio::CLI::Results& options)
@@ -239,10 +272,15 @@ static int Runner(const PacBio::CLI::Results& options)
         return query;
     };
 
+    int counter = 0;
+    std::cout << "ZMW\tIndex\tScore" << std::endl;
     for (const auto& datasetPath : datasetPaths) {
         auto query = BamQuery(datasetPath);
         for (const auto& r : *query) {
-            SimdNeedleWunschAlignment(r.Sequence(), barcodes);
+            int idx;
+            int score;
+            std::tie(idx, score) = SimdNeedleWunschAlignment(r.Sequence(), barcodes);
+            std::cout << r.FullName() << "\t" << idx << "\t" << score << std::endl;
         }
     }
 
