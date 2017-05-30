@@ -14,26 +14,26 @@ IF(NOT CMAKE_BUILD_TYPE)
 ENDIF(NOT CMAKE_BUILD_TYPE)
 
 # Build-time options
-option(MS_build_bin    "Build binaries." ON)
-option(MS_use_ccache   "Build UHU using ccache, if available." ON)
+option(UHU_build_bin    "Build binaries." ON)
+option(UHU_use_ccache   "Build UHU using ccache, if available." ON)
 
 # Main project paths
-set(MS_RootDir       ${UHU_SOURCE_DIR})
-set(MS_IncludeDir    ${MS_RootDir}/include)
-set(MS_SourceDir     ${MS_RootDir}/src)
-set(MS_SwigDir       ${MS_RootDir}/swig)
-set(MS_TestsDir      ${MS_RootDir}/tests)
-set(MS_ThirdPartyDir ${MS_RootDir}/third-party)
+set(UHU_RootDir       ${UHU_SOURCE_DIR})
+set(UHU_IncludeDir    ${UHU_RootDir}/include)
+set(UHU_SourceDir     ${UHU_RootDir}/src)
+set(UHU_SwigDir       ${UHU_RootDir}/swig)
+set(UHU_TestsDir      ${UHU_RootDir}/tests)
+set(UHU_ThirdPartyDir ${UHU_RootDir}/third-party)
 
 # Project configuration
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake ${CMAKE_MODULE_PATH})
 
 # Fixed order, do not sort or shuffle
-include(ms-ccache)
-include(ms-releasewithassert)
-include(ms-dependencies)
-include(ms-compilerflags)
-include(ms-gitsha1)
+include(uhu-ccache)
+include(uhu-releasewithassert)
+include(uhu-dependencies)
+include(uhu-compilerflags)
+include(uhu-gitsha1)
 
 # Build library
-add_subdirectory(${MS_SourceDir})
+add_subdirectory(${UHU_SourceDir})

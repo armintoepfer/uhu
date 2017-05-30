@@ -3,16 +3,22 @@ GET_PROPERTY(LOCAL_COMPILE_FLAGS GLOBAL PROPERTY MINORSEQ_COMPILE_FLAGS_GLOBAL)
 GET_PROPERTY(LOCAL_LINK_FLAGS GLOBAL PROPERTY MINORSEQ_LINK_FLAGS_GLOBAL)
 
 # get all header files for IDE support
-file(GLOB_RECURSE MS_HEADER "${MS_IncludeDir}/*.h")
-file(GLOB_RECURSE MS_HIDDEN_HEADER "*.h")
+file(GLOB_RECURSE UHU_HEADER "${UHU_IncludeDir}/*.h")
+file(GLOB_RECURSE UHU_HIDDEN_HEADER "*.h")
 # get sources for src/
-file(GLOB MS_CPP        "*.cpp")
+file(GLOB UHU_CPP        "*.cpp")
 # get sources for src/tools
-file(GLOB MS_TOOLS_CPP  "tools/*.cpp")
+file(GLOB UHU_TOOLS_CPP  "tools/*.cpp")
 
-if (MS_build_bin)
+# ssw C library cannot be build with ${LOCAL_COMPILE_FLAGS} since it's C
+add_library(ssw STATIC ${ssw_INCLUDE_DIRS}/ssw.c)
+
+if (UHU_build_bin)
     function(create_exe exeName)
-        add_executable(${exeName} ${MS_SourceDir}/tools/main/${exeName}.cpp)
+        add_executable(${exeName}
+            ${UHU_SourceDir}/tools/main/${exeName}.cpp
+            ${ssw_INCLUDE_DIRS}/ssw_cpp.cpp
+        )
 
         set_target_properties(${exeName} PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -25,10 +31,11 @@ if (MS_build_bin)
             ${HTSLIB_LIBRARIES}
             ${PacBioBAM_LIBRARIES}
             ${pbcopper_LIBRARIES}
+            ssw
         )
 
         target_include_directories(${exeName} PUBLIC
-            ${MS_IncludeDir}
+            ${UHU_IncludeDir}
             ${CMAKE_BINARY_DIR}/generated
             ${Boost_INCLUDE_DIRS}
             ${ZLIB_INCLUDE_DIRS}
@@ -45,5 +52,6 @@ if (MS_build_bin)
         endif()
     endfunction()
 
-    create_exe(extract_cx)
+    create_exe(zmw_stats)
+    create_exe(demux_ccs)
 endif()

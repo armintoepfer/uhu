@@ -18,7 +18,7 @@ if (NOT pbcopper_INCLUDE_DIRS OR
     set(pbcopper_build_tests OFF CACHE INTERNAL "" FORCE)
     set(pbcopper_build_docs OFF CACHE INTERNAL "" FORCE)
     set(pbcopper_build_examples OFF CACHE INTERNAL "" FORCE)
-    add_subdirectory(${MS_ThirdPartyDir}/pbcopper external/pbcopper/build)
+    add_subdirectory(${UHU_ThirdPartyDir}/pbcopper external/pbcopper/build)
 endif()
 
 # only require if NOT called from pip install
@@ -38,8 +38,8 @@ if (NOT PacBioBAM_INCLUDE_DIRS OR
     set(PacBioBAM_build_docs    OFF CACHE INTERNAL "" FORCE)
     set(PacBioBAM_build_tests   OFF CACHE INTERNAL "" FORCE)
     set(PacBioBAM_build_tools   OFF CACHE INTERNAL "" FORCE)
-    add_subdirectory(${MS_ThirdPartyDir}/pbbam external/pbbam/build)
+    add_subdirectory(${UHU_ThirdPartyDir}/pbbam external/pbbam/build)
 endif()
 
 # Complete-Striped-Smith-Waterman-Library
-set(ssw_INCLUDE_DIRS ${MS_ThirdPartyDir}/cssw)
+set(ssw_INCLUDE_DIRS ${UHU_ThirdPartyDir}/cssw)
