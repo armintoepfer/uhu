@@ -93,12 +93,13 @@ static PacBio::CLI::Interface CreateCLI()
 {
     using Option = PacBio::CLI::Option;
 
-    PacBio::CLI::Interface i{"demux_ccs", "Demultiplex Barcoded CCS Data", ""};
+    PacBio::CLI::Interface i{"demux_ccs", "Demultiplex Barcoded CCS Data", "0.0.1"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
 
-    i.AddPositionalArguments({{"bam", "Source BAM", "FILE"}});
+    i.AddPositionalArguments(
+        {{"bam", "Source BAM", "BAM_FILE"}, {"fasta", "Barcode file", "FASTA_FILE"}});
 
     return i;
 }
@@ -342,8 +343,8 @@ static int Runner(const PacBio::CLI::Results& options)
                 r.Barcodes(std::make_pair(bh.Idx, bh.Idx));
                 r.BarcodeQuality(bh.Bq);
                 writer->Write(r);
+                std::cout << r.FullName() << "\t" << bh << std::endl;
             }
-            std::cout << r.FullName() << "\t" << bh << std::endl;
         }
         writer.reset(nullptr);
     }

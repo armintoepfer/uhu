@@ -65,7 +65,7 @@ static PacBio::CLI::Interface CreateCLI()
 {
     using Option = PacBio::CLI::Option;
 
-    PacBio::CLI::Interface i{"extract_cx", "extract_cx, per barcode", ""};
+    PacBio::CLI::Interface i{"zmw_stats", "Extracts per ZMW stats", "0.0.1"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
