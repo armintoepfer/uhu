@@ -9,7 +9,7 @@
 ## INSTALL
 
   ```sh
-  git clone ssh://git@bitbucket.nanofluidics.com:7999/~atoepfer/uhu.git && cd uhu
+  git clone https://github.com/armintoepfer/uhu.git && cd uhu
   git submodule update --init
   git submodule foreach git pull origin develop
   mkdir build && cd build
@@ -31,4 +31,6 @@ Extracts the following metrics for each ZMW to standard out:
  - Subread Length Standard Deviation
 
 ### demux_ccs
-Demultiplexes CCS reads. Only symmetric mode supported.
+Demultiplexes CCS reads. Only symmetric mode supported. Output is BAM.
+Reads below 50 bp after demultiplexing are omitted. Barcode sequences get
+removed and `bq` and `bc` tags added.
