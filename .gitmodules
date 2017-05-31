@@ -1,8 +1,8 @@
 [submodule "third-party/pbcopper"]
 	path = third-party/pbcopper
-	url = ssh://git@bitbucket.nanofluidics.com:7999/SAT/pbcopper.git
+	url = git@github.com:PacificBiosciences/pbcopper.git
 	branch = master
 [submodule "third-party/pbbam"]
 	path = third-party/pbbam
-	url = ssh://git@bitbucket.nanofluidics.com:7999/SAT/pbbam.git
+	url = git@github.com:PacificBiosciences/pbbam.git
 	branch = master
