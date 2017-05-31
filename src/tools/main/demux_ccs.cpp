@@ -42,6 +42,7 @@
 #include <map>
 #include <memory>
 #include <numeric>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -59,6 +60,8 @@
 #include <pbbam/FastaReader.h>
 #include <pbbam/PbiFilter.h>
 #include <pbbam/PbiFilterQuery.h>
+
+#include <uhu/threadpool/ThreadPool.h>
 
 namespace PacBio {
 namespace Demux {
@@ -80,6 +83,19 @@ struct BarcodeHit
     uint8_t Bq;
     int ClipStart;
     int ClipEnd;
+
+    operator std::string()
+    {
+        std::stringstream out;
+        out << static_cast<int>(Idx);
+        out << "\t";
+        out << static_cast<int>(Bq);
+        out << "\t";
+        out << ClipStart;
+        out << "\t";
+        out << ClipEnd;
+        return out.str();
+    }
 
     friend std::ostream& operator<<(std::ostream& stream, const BarcodeHit& bh)
     {
@@ -331,19 +347,38 @@ static int Runner(const PacBio::CLI::Results& options)
     std::unique_ptr<BAM::BamWriter> writer;
     int counter = 0;
     std::cout << "ZMW\tIndex\tScore\tClipStar\tClipEnd" << std::endl;
+    std::map<int, BAM::BamRecord> map;
     for (const auto& datasetPath : datasetPaths) {
         auto query = BamQuery(datasetPath);
-        for (auto r : *query) {
+        std::vector<Uhu::Threadpool::ThreadPool::TaskFuture<std::pair<BAM::BamRecord, std::string>>>
+            v;
+        for (auto& r : *query) {
             if (!writer)
                 writer.reset(new BAM::BamWriter("out-" + std::to_string(counter++) + ".bam",
                                                 r.Header().DeepCopy()));
-            BarcodeHit bh = SimdNeedleWunschAlignment(r.Sequence(), barcodes);
-            if (bh.ClipEnd - bh.ClipStart >= 50) {
-                r.Clip(BAM::ClipType::CLIP_TO_QUERY, bh.ClipStart, bh.ClipEnd);
-                r.Barcodes(std::make_pair(bh.Idx, bh.Idx));
-                r.BarcodeQuality(bh.Bq);
-                writer->Write(r);
-                std::cout << r.FullName() << "\t" << bh << std::endl;
+            v.push_back(Uhu::Threadpool::DefaultThreadPool::submitJob(
+                [&barcodes](BAM::BamRecord r) {
+                    BAM::BamRecord recordOut;
+                    std::string report;
+                    BarcodeHit bh = SimdNeedleWunschAlignment(r.Sequence(), barcodes);
+                    if (bh.ClipEnd - bh.ClipStart >= 50) {
+                        r.Clip(BAM::ClipType::CLIP_TO_QUERY, bh.ClipStart, bh.ClipEnd);
+                        r.Barcodes(std::make_pair(bh.Idx, bh.Idx));
+                        r.BarcodeQuality(bh.Bq);
+                        // writer->Write(r);
+                        report = r.FullName() + "\t" + std::string(bh);
+                        recordOut = std::move(r);
+                    }
+                    return std::make_pair(std::move(recordOut), report);
+                },
+                r));
+        }
+
+        for (auto& item : v) {
+            auto p = item.get();
+            if (!p.second.empty()) {
+                writer->Write(p.first);
+                std::cout << p.second << std::endl;
             }
         }
         writer.reset(nullptr);
