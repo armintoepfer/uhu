@@ -129,9 +129,9 @@ static int Runner(const PacBio::CLI::Results& options)
                       << std::sqrt(variance(acc));
             std::cerr << std::endl;
 
-            std::ofstream out(std::to_string(curZmw) + ".subreads");
-            for (const auto& s : subreadLengths)
-                out << s << std::endl;
+            // std::ofstream out(std::to_string(curZmw) + ".subreads");
+            // for (const auto& s : subreadLengths)
+            //     out << s << std::endl;
 
             cxUniq.fill(0);
             curZmw = r.HoleNumber();
