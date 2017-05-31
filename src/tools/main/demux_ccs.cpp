@@ -84,23 +84,17 @@ struct BarcodeHit
     int ClipStart;
     int ClipEnd;
 
-    operator std::string()
+    operator std::string() const
     {
         std::stringstream out;
-        out << static_cast<int>(Idx);
-        out << "\t";
-        out << static_cast<int>(Bq);
-        out << "\t";
-        out << ClipStart;
-        out << "\t";
-        out << ClipEnd;
+        out << static_cast<int>(Idx) << "\t" << static_cast<int>(Bq) << "\t" << ClipStart << "\t"
+            << ClipEnd;
         return out.str();
     }
 
     friend std::ostream& operator<<(std::ostream& stream, const BarcodeHit& bh)
     {
-        stream << bh.Idx << "\t" << static_cast<int>(bh.Bq) << "\t" << bh.ClipStart << "\t"
-               << bh.ClipEnd;
+        stream << std::string(bh);
         return stream;
     }
 };
@@ -109,7 +103,7 @@ static PacBio::CLI::Interface CreateCLI()
 {
     using Option = PacBio::CLI::Option;
 
-    PacBio::CLI::Interface i{"demux_ccs", "Demultiplex Barcoded CCS Data", "0.0.1"};
+    PacBio::CLI::Interface i{"demux_ccs", "Demultiplex Barcoded CCS Data", "0.0.2"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
@@ -289,36 +283,21 @@ BarcodeHit SimdNeedleWunschAlignment(const std::string& target, const std::vecto
         int score;
         int clipStart;
         int clipEnd;
+        StripedSmithWaterman::Alignment alignmentBegin;
+        StripedSmithWaterman::Alignment alignmentEnd;
         if (forwardScore > revScore) {
             score = forwardScore;
             idx = forwardIdx;
-            auto alignmentTmp = AlignForward(alignerBegin, queries[idx]);
-            clipStart = alignmentTmp.ref_end;
-
-            alignmentTmp = AlignRC(alignerEnd, queries[idx]);
-            clipEnd = alignerEndBegin + alignmentTmp.ref_begin;
-
-#if 0
-        std::cerr << "Best Smith-Waterman score:\t" << alignmentTmp.sw_score << std::endl
-                  << "Next-best Smith-Waterman score:\t" << alignmentTmp.sw_score_next_best
-                  << std::endl
-                  << "Reference start:\t" << alignmentTmp.ref_begin << std::endl
-                  << "Reference end:\t" << alignmentTmp.ref_end << std::endl
-                  << "Query start:\t" << alignmentTmp.query_begin << std::endl
-                  << "Query end:\t" << alignmentTmp.query_end << std::endl
-                  << "Next-best reference end:\t" << alignmentTmp.ref_end_next_best << std::endl
-                  << "Number of mismatches:\t" << alignmentTmp.mismatches << std::endl
-                  << "Cigar: " << alignmentTmp.cigar_string << std::endl;
-#endif
+            alignmentBegin = AlignForward(alignerBegin, queries[idx]);
+            alignmentEnd = AlignRC(alignerEnd, queries[idx]);
         } else {
             score = revScore;
             idx = revIdx;
-            auto alignmentTmp = AlignRC(alignerBegin, queries[idx]);
-            clipStart = alignmentTmp.ref_end;
-
-            alignmentTmp = AlignForward(alignerEnd, queries[idx]);
-            clipEnd = alignerEndBegin + alignmentTmp.ref_begin;
+            alignmentBegin = AlignRC(alignerBegin, queries[idx]);
+            alignmentEnd = AlignForward(alignerEnd, queries[idx]);
         }
+        clipStart = alignmentBegin.ref_end;
+        clipEnd = alignerEndBegin + alignmentEnd.ref_begin;
 
         return BarcodeHit(idx, score, clipStart, clipEnd);
     } else {
@@ -338,12 +317,8 @@ BarcodeHit SimdNeedleWunschAlignment(const std::string& target, const std::vecto
         int score;
         int idx;
         std::tie(idx, score) = GetBestIndex(scores);
-
-        auto alignmentTmp = AlignForward(alignerBegin, queries[idx]);
-        int clipStart = alignmentTmp.ref_end;
-
-        alignmentTmp = AlignRC(alignerEnd, queries[idx]);
-        int clipEnd = alignerEndBegin + alignmentTmp.ref_begin;
+        int clipStart = AlignForward(alignerBegin, queries[idx]).ref_end;
+        int clipEnd = alignerEndBegin + AlignRC(alignerEnd, queries[idx]).ref_begin;
 
         return BarcodeHit(idx, score, clipStart, clipEnd);
     }
