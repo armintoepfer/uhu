@@ -31,6 +31,6 @@ Extracts the following metrics for each ZMW to standard out:
  - Subread Length Standard Deviation
 
 ### demux_ccs
-Demultiplexes CCS reads. Only symmetric mode supported. Output is BAM.
+Demultiplexes CCS reads. Output is BAM.
 Reads below 50 bp after demultiplexing are omitted. Barcode sequences get
 removed and `bq` and `bc` tags added.
