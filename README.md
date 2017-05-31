@@ -16,3 +16,19 @@
   cmake -GNinja -DCMAKE_INSTALL_PREFIX=~/bin .. && ninja
   ninja install
   ```
+
+## TOOLS
+
+### zmw_stats
+Extracts the following metrics for each ZMW to standard out:
+ - ZMW ID
+ - Number of counts for each CX tag between 0 - 15
+ - Forward barcode
+ - Barcode Score
+ - Number of Subreads
+ - Subread Mean Length
+ - Subread Median Length
+ - Subread Length Standard Deviation
+
+### demux_ccs
+Demultiplexes CCS reads. Only symmetric mode supported.
