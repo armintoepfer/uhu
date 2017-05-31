@@ -201,7 +201,8 @@ static std::string ReverseComplement(const std::string& input)
     return output;
 }
 
-BarcodeHit SimdNeedleWunschAlignment(const std::string& target, const std::vector<Barcode>& queries)
+BarcodeHit SimdNeedleWunschAlignment(const std::string& target, const std::vector<Barcode>& queries,
+                                     bool tryBothDirections)
 {
     int barcodeLength = queries.front().Bases.size();
     int barcodeLengthWSpacing = barcodeLength * 1.2;
@@ -243,29 +244,6 @@ BarcodeHit SimdNeedleWunschAlignment(const std::string& target, const std::vecto
         return std::make_pair(scores, scoresRev);
     };
 
-    auto ComputeCombinedScore = [&AlignForward, &AlignRC, &AlignTo, &alignerBegin, &alignerEnd](
-        std::vector<int>* scores, std::vector<int>* scoresRev) {
-        std::vector<int> scoresBegin;
-        std::vector<int> scoresRevBegin;
-        std::tie(scoresBegin, scoresRevBegin) = AlignTo(alignerBegin);
-
-        std::vector<int> scoresEnd;
-        std::vector<int> scoresRevEnd;
-        std::tie(scoresEnd, scoresRevEnd) = AlignTo(alignerEnd);
-
-        assert(scoresBegin.size() == scoresRevEnd.size());
-        for (size_t i = 0; i < scoresBegin.size(); ++i)
-            scores->emplace_back((scoresBegin.at(i) + scoresRevEnd.at(i)) / 2);
-
-        assert(scoresRevBegin.size() == scoresRevEnd.size());
-        for (size_t i = 0; i < scoresBegin.size(); ++i)
-            scoresRev->emplace_back((scoresRevBegin.at(i) + scoresEnd.at(i)) / 2);
-    };
-
-    std::vector<int> scores;
-    std::vector<int> scoresRev;
-    ComputeCombinedScore(&scores, &scoresRev);
-
     auto GetBestIndex = [&barcodeLength](std::vector<int>& v) {
         std::vector<size_t> idx(v.size());
         std::iota(idx.begin(), idx.end(), 0);
@@ -275,25 +253,50 @@ BarcodeHit SimdNeedleWunschAlignment(const std::string& target, const std::vecto
         return std::make_pair(idx.front(), bq);
     };
 
-    int forwardScore;
-    int forwardIdx;
-    std::tie(forwardIdx, forwardScore) = GetBestIndex(scores);
-    int revScore;
-    int revIdx;
-    std::tie(revIdx, revScore) = GetBestIndex(scoresRev);
+    if (tryBothDirections) {
 
-    int idx;
-    int score;
-    int clipStart;
-    int clipEnd;
-    if (forwardScore > revScore) {
-        score = forwardScore;
-        idx = forwardIdx;
-        auto alignmentTmp = AlignForward(alignerBegin, queries[idx]);
-        clipStart = alignmentTmp.ref_end;
+        auto ComputeCombinedScore = [&AlignForward, &AlignRC, &AlignTo, &alignerBegin, &alignerEnd](
+            std::vector<int>* scores, std::vector<int>* scoresRev) {
+            std::vector<int> scoresBegin;
+            std::vector<int> scoresRevBegin;
+            std::tie(scoresBegin, scoresRevBegin) = AlignTo(alignerBegin);
 
-        alignmentTmp = AlignRC(alignerEnd, queries[idx]);
-        clipEnd = alignerEndBegin + alignmentTmp.ref_begin;
+            std::vector<int> scoresEnd;
+            std::vector<int> scoresRevEnd;
+            std::tie(scoresEnd, scoresRevEnd) = AlignTo(alignerEnd);
+
+            assert(scoresBegin.size() == scoresRevEnd.size());
+            for (size_t i = 0; i < scoresBegin.size(); ++i)
+                scores->emplace_back((scoresBegin.at(i) + scoresRevEnd.at(i)) / 2);
+
+            assert(scoresRevBegin.size() == scoresRevEnd.size());
+            for (size_t i = 0; i < scoresBegin.size(); ++i)
+                scoresRev->emplace_back((scoresRevBegin.at(i) + scoresEnd.at(i)) / 2);
+        };
+
+        std::vector<int> scores;
+        std::vector<int> scoresRev;
+        ComputeCombinedScore(&scores, &scoresRev);
+
+        int forwardScore;
+        int forwardIdx;
+        std::tie(forwardIdx, forwardScore) = GetBestIndex(scores);
+        int revScore;
+        int revIdx;
+        std::tie(revIdx, revScore) = GetBestIndex(scoresRev);
+
+        int idx;
+        int score;
+        int clipStart;
+        int clipEnd;
+        if (forwardScore > revScore) {
+            score = forwardScore;
+            idx = forwardIdx;
+            auto alignmentTmp = AlignForward(alignerBegin, queries[idx]);
+            clipStart = alignmentTmp.ref_end;
+
+            alignmentTmp = AlignRC(alignerEnd, queries[idx]);
+            clipEnd = alignerEndBegin + alignmentTmp.ref_begin;
 
 #if 0
         std::cerr << "Best Smith-Waterman score:\t" << alignmentTmp.sw_score << std::endl
@@ -307,17 +310,43 @@ BarcodeHit SimdNeedleWunschAlignment(const std::string& target, const std::vecto
                   << "Number of mismatches:\t" << alignmentTmp.mismatches << std::endl
                   << "Cigar: " << alignmentTmp.cigar_string << std::endl;
 #endif
+        } else {
+            score = revScore;
+            idx = revIdx;
+            auto alignmentTmp = AlignRC(alignerBegin, queries[idx]);
+            clipStart = alignmentTmp.ref_end;
+
+            alignmentTmp = AlignForward(alignerEnd, queries[idx]);
+            clipEnd = alignerEndBegin + alignmentTmp.ref_begin;
+        }
+
+        return BarcodeHit(idx, score, clipStart, clipEnd);
     } else {
-        score = revScore;
-        idx = revIdx;
-        auto alignmentTmp = AlignRC(alignerBegin, queries[idx]);
-        clipStart = alignmentTmp.ref_end;
 
-        alignmentTmp = AlignForward(alignerEnd, queries[idx]);
-        clipEnd = alignerEndBegin + alignmentTmp.ref_begin;
+        auto ComputeCombinedForwardScore = [&AlignForward, &AlignRC, &queries, &alignerBegin,
+                                            &alignerEnd](std::vector<int>* scores) {
+            for (size_t i = 0; i < queries.size(); ++i) {
+                (*scores)[i] = (AlignForward(alignerBegin, queries[i]).sw_score +
+                                AlignRC(alignerEnd, queries[i]).sw_score) /
+                               2;
+            }
+        };
+
+        std::vector<int> scores(queries.size(), 0);
+        ComputeCombinedForwardScore(&scores);
+
+        int score;
+        int idx;
+        std::tie(idx, score) = GetBestIndex(scores);
+
+        auto alignmentTmp = AlignForward(alignerBegin, queries[idx]);
+        int clipStart = alignmentTmp.ref_end;
+
+        alignmentTmp = AlignRC(alignerEnd, queries[idx]);
+        int clipEnd = alignerEndBegin + alignmentTmp.ref_begin;
+
+        return BarcodeHit(idx, score, clipStart, clipEnd);
     }
-
-    return BarcodeHit(idx, score, clipStart, clipEnd);
 }
 
 static int Runner(const PacBio::CLI::Results& options)
@@ -360,7 +389,7 @@ static int Runner(const PacBio::CLI::Results& options)
                 [&barcodes](BAM::BamRecord r) {
                     BAM::BamRecord recordOut;
                     std::string report;
-                    BarcodeHit bh = SimdNeedleWunschAlignment(r.Sequence(), barcodes);
+                    BarcodeHit bh = SimdNeedleWunschAlignment(r.Sequence(), barcodes, false);
                     if (bh.ClipEnd - bh.ClipStart >= 50) {
                         r.Clip(BAM::ClipType::CLIP_TO_QUERY, bh.ClipStart, bh.ClipEnd);
                         r.Barcodes(std::make_pair(bh.Idx, bh.Idx));
