@@ -36,6 +36,7 @@
 // Author: Armin Töpfer
 
 #include <algorithm>
+#include <atomic>
 #include <exception>
 #include <fstream>
 #include <iostream>
@@ -103,10 +104,19 @@ static PacBio::CLI::Interface CreateCLI()
 {
     using Option = PacBio::CLI::Option;
 
-    PacBio::CLI::Interface i{"demux_ccs", "Demultiplex Barcoded CCS Data", "0.0.2"};
+    PacBio::CLI::Interface i{"demux_ccs", "Demultiplex Barcoded CCS Data and Clip Barcodes",
+                             "0.1.0"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
+
+    // clang-format off
+    i.AddOptions({
+        {"tryRC",     {"t","try-rc"},   "Try barcodes also as reverse complements.", Option::BoolType()},
+        {"minScore",  {"s","min-score"},  "Minimum barcode score.", Option::IntType(51)},
+        {"minLength", {"l","min-length"}, "Minimum sequence length after clipping.", Option::IntType(50)}
+    });
+    // clang-format on
 
     i.AddPositionalArguments(
         {{"bam", "Source BAM", "BAM_FILE"}, {"fasta", "Barcode file", "FASTA_FILE"}});
@@ -116,18 +126,13 @@ static PacBio::CLI::Interface CreateCLI()
 
 static void ParsePositionalArgs(const std::vector<std::string>& args,
                                 std::vector<std::string>* datasetPaths,
-                                std::vector<Barcode>* barcodes, std::string* outputFile)
+                                std::vector<Barcode>* barcodes)
 {
     std::vector<std::string> fastaPaths;
     for (const auto& i : args) {
         const bool fileExist = PacBio::Utility::FileExists(i);
         if (!fileExist) {
-            if (!outputFile->empty())
-                throw std::runtime_error(
-                    "Only one output file allowed. Following files do not exist: " + *outputFile +
-                    " and " + i);
-            *outputFile = i;
-            continue;
+            throw std::runtime_error("File does not exist: " + i);
         }
         BAM::DataSet ds(i);
 
@@ -317,8 +322,9 @@ BarcodeHit SimdNeedleWunschAlignment(const std::string& target, const std::vecto
         int score;
         int idx;
         std::tie(idx, score) = GetBestIndex(scores);
-        int clipStart = AlignForward(alignerBegin, queries[idx]).ref_end;
-        int clipEnd = alignerEndBegin + AlignRC(alignerEnd, queries[idx]).ref_begin;
+        int clipStart = std::max(0, AlignForward(alignerBegin, queries[idx]).ref_end);
+        int clipEnd =
+            std::max(targetLength, alignerEndBegin + AlignRC(alignerEnd, queries[idx]).ref_begin);
 
         return BarcodeHit(idx, score, clipStart, clipEnd);
     }
@@ -332,10 +338,13 @@ static int Runner(const PacBio::CLI::Results& options)
         return EXIT_FAILURE;
     }
 
+    const bool tryRC = options["tryRC"];
+    const int minScore = options["minScore"];
+    const int minLength = options["minLength"];
+
     std::vector<std::string> datasetPaths;
     std::vector<Barcode> barcodes;
-    std::string outputFile;
-    ParsePositionalArgs(options.PositionalArguments(), &datasetPaths, &barcodes, &outputFile);
+    ParsePositionalArgs(options.PositionalArguments(), &datasetPaths, &barcodes);
 
     auto BamQuery = [](const std::string& filePath) {
         BAM::DataSet ds(filePath);
@@ -348,43 +357,80 @@ static int Runner(const PacBio::CLI::Results& options)
         return query;
     };
 
+    auto FilePrefixInfix = [](const std::string& path) -> std::string {
+        size_t fileStart = path.find_last_of("/");
+
+        if (fileStart == std::string::npos) fileStart = -1;
+
+        // increment beyond the '/'
+        ++fileStart;
+
+        size_t extStart = path.substr(fileStart, path.length() - fileStart).find_last_of(".");
+
+        if (extStart == std::string::npos) return "";
+
+        auto suffix = path.substr(fileStart, extStart);
+        return suffix;
+    };
+
     std::unique_ptr<BAM::BamWriter> writer;
-    int counter = 0;
-    std::cout << "ZMW\tIndex\tScore\tClipStar\tClipEnd" << std::endl;
     std::map<int, BAM::BamRecord> map;
     for (const auto& datasetPath : datasetPaths) {
         auto query = BamQuery(datasetPath);
         std::vector<Uhu::Threadpool::ThreadPool::TaskFuture<std::pair<BAM::BamRecord, std::string>>>
             v;
+        std::string prefix = FilePrefixInfix(datasetPath);
+        std::atomic_int belowMinLength(0);
+        std::atomic_int belowMinScore(0);
+        std::atomic_int belowBoth(0);
+        std::atomic_int aboveThresholds(0);
         for (auto& r : *query) {
-            if (!writer)
-                writer.reset(new BAM::BamWriter("out-" + std::to_string(counter++) + ".bam",
-                                                r.Header().DeepCopy()));
+            if (!writer) {
+                writer.reset(new BAM::BamWriter(prefix + ".demux.bam", r.Header().DeepCopy()));
+            }
             v.push_back(Uhu::Threadpool::DefaultThreadPool::submitJob(
-                [&barcodes](BAM::BamRecord r) {
+                [&barcodes, &minScore, &minLength, &tryRC, &belowMinLength, &belowMinScore,
+                 &belowBoth, &aboveThresholds](BAM::BamRecord r) {
                     BAM::BamRecord recordOut;
                     std::string report;
-                    BarcodeHit bh = SimdNeedleWunschAlignment(r.Sequence(), barcodes, false);
-                    if (bh.ClipEnd - bh.ClipStart >= 50) {
+                    BarcodeHit bh = SimdNeedleWunschAlignment(r.Sequence(), barcodes, tryRC);
+                    bool aboveMinLength = (bh.ClipEnd - bh.ClipStart) >= minLength;
+                    bool aboveMinScore = bh.Bq >= minScore;
+                    if (aboveMinLength && aboveMinScore) {
                         r.Clip(BAM::ClipType::CLIP_TO_QUERY, bh.ClipStart, bh.ClipEnd);
                         r.Barcodes(std::make_pair(bh.Idx, bh.Idx));
                         r.BarcodeQuality(bh.Bq);
-                        // writer->Write(r);
                         report = r.FullName() + "\t" + std::string(bh);
                         recordOut = std::move(r);
+                        ++aboveThresholds;
+                    } else if (!aboveMinLength && !aboveMinScore) {
+                        ++belowBoth;
+                    } else if (!aboveMinLength) {
+                        ++belowMinLength;
+                    } else if (!aboveMinScore) {
+                        ++belowMinScore;
                     }
                     return std::make_pair(std::move(recordOut), report);
                 },
                 r));
         }
 
+        std::ofstream report(prefix + ".demux.report");
+        report << "ZMW\tIndex\tScore\tClipStar\tClipEnd" << std::endl;
+
         for (auto& item : v) {
             auto p = item.get();
             if (!p.second.empty()) {
                 writer->Write(p.first);
-                std::cout << p.second << std::endl;
+                report << p.second << std::endl;
             }
         }
+
+        std::ofstream summary(prefix + ".demux.summary");
+        summary << "Above length and score threshold : " << aboveThresholds << std::endl;
+        summary << "Below length and score threshold : " << belowBoth << std::endl;
+        summary << "Below length threshold           : " << belowMinLength << std::endl;
+        summary << "Below score threshold            : " << belowMinScore << std::endl;
         writer.reset(nullptr);
     }
 
