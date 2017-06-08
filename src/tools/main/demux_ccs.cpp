@@ -91,20 +91,25 @@ struct Barcode
 
 struct BarcodeHit
 {
-    BarcodeHit(int idx, int bq, int clipStart, int clipEnd)
-        : Idx(idx), Bq(bq), ClipStart(clipStart), ClipEnd(clipEnd)
+    BarcodeHit(int idx, int bq, int clipLeft, int clipRight)
+        : IdxL(idx), IdxR(idx), Bq(bq), ClipStart(clipLeft), ClipRight(clipRight)
     {
     }
-    uint16_t Idx;
+    BarcodeHit(int idxL, int idxR, int bq, int clipLeft, int clipRight)
+        : IdxL(idxL), IdxR(idxR), Bq(bq), ClipStart(clipLeft), ClipRight(clipRight)
+    {
+    }
+    uint16_t IdxL;
+    uint16_t IdxR;
     uint8_t Bq;
     int ClipStart;
-    int ClipEnd;
+    int ClipRight;
 
     operator std::string() const
     {
         std::stringstream out;
-        out << static_cast<int>(Idx) << "\t" << static_cast<int>(Bq) << "\t" << ClipStart << "\t"
-            << ClipEnd;
+        out << static_cast<int>(IdxL) << "\t" << static_cast<int>(IdxR) << "\t"
+            << static_cast<int>(Bq) << "\t" << ClipStart << "\t" << ClipRight;
         return out.str();
     }
 
@@ -118,12 +123,16 @@ struct BarcodeHit
 enum class Mode : int
 {
     SYMMETRIC = 0,
+    ASYMMETRIC,
     UNKNOWN
 };
 
 static Mode StringToMode(const std::string& mode)
 {
-    if (mode == "symmetric") return Mode::SYMMETRIC;
+    if (mode == "symmetric")
+        return Mode::SYMMETRIC;
+    else if (mode == "asymmetric")
+        return Mode::ASYMMETRIC;
     return Mode::UNKNOWN;
 }
 
@@ -132,7 +141,7 @@ static PacBio::CLI::Interface CreateCLI()
     using Option = PacBio::CLI::Option;
 
     PacBio::CLI::Interface i{"demux_ccs", "Demultiplex Barcoded CCS Data and Clip Barcodes",
-                             "0.2.0"};
+                             "0.3.0"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
@@ -140,7 +149,7 @@ static PacBio::CLI::Interface CreateCLI()
     // clang-format off
     i.AddOptions({});
     i.AddGroup("Barcode Configuration", {
-        {"mode",      {"m","mode"},       "Barcoding mode. Available: symmetric",      Option::StringType("symmetric"), {"symmetric"}},
+        {"mode",      {"m","mode"},       "Barcoding mode. Available: symmetric",      Option::StringType("symmetric"), {"symmetric", "asymmetric"}},
         {"tryRC",     {"t","try-rc"},     "Try barcodes also as reverse complements.", Option::BoolType()},
     });
     i.AddGroup("Tuning", {
@@ -229,7 +238,7 @@ char Complement(char base)
     }
 }
 
-static std::string ReverseComplement(const std::string& input)
+static std::string RCerseComplement(const std::string& input)
 {
     std::string output;
     output.reserve(input.length());
@@ -237,14 +246,6 @@ static std::string ReverseComplement(const std::string& input)
         output.push_back(Complement(*it));
     return output;
 }
-
-#if 0
-static std::string Reverse(std::string s)
-{
-    std::reverse(s.begin(), s.end());
-    return s;
-}
-#endif
 
 static StripedSmithWaterman::Alignment Align(StripedSmithWaterman::Aligner& aligner,
                                              const char* bases)
@@ -264,18 +265,9 @@ static StripedSmithWaterman::Alignment AlignForward(StripedSmithWaterman::Aligne
 static StripedSmithWaterman::Alignment AlignRC(StripedSmithWaterman::Aligner& aligner,
                                                const Barcode& query)
 {
-    auto revComp = ReverseComplement(query.Bases);
+    auto revComp = RCerseComplement(query.Bases);
     return Align(aligner, revComp.c_str());
 };
-
-#if 0
-static StripedSmithWaterman::Alignment AlignReverse(StripedSmithWaterman::Aligner& aligner,
-                                                    const Barcode& query)
-{
-    auto reverse = Reverse(query.Bases);
-    return Align(aligner, reverse.c_str());
-};
-#endif
 
 BarcodeHit SimdNeedleWunschAlignment(const AlignerConfig& ac, const std::string& target,
                                      const std::vector<Barcode>& queries, const Mode& mode,
@@ -289,27 +281,26 @@ BarcodeHit SimdNeedleWunschAlignment(const AlignerConfig& ac, const std::string&
     int barcodeLengthWSpacing = barcodeLength * windowSizeMult;
     int targetLength = target.size();
 
-    StripedSmithWaterman::Aligner alignerBegin(ac.MatchScore, ac.MismatchPenalty, ac.GapOpenPenalty,
-                                               ac.GapExtPenalty);
-    alignerBegin.SetReferenceSequence(target.c_str(),
-                                      std::min(targetLength, barcodeLengthWSpacing));
+    StripedSmithWaterman::Aligner alignerLeft(ac.MatchScore, ac.MismatchPenalty, ac.GapOpenPenalty,
+                                              ac.GapExtPenalty);
+    alignerLeft.SetReferenceSequence(target.c_str(), std::min(targetLength, barcodeLengthWSpacing));
 
-    StripedSmithWaterman::Aligner alignerEnd(ac.MatchScore, ac.MismatchPenalty, ac.GapOpenPenalty,
-                                             ac.GapExtPenalty);
-    auto alignerEndBegin = std::max(targetLength - barcodeLengthWSpacing, 0);
-    alignerEnd.SetReferenceSequence(target.c_str() + alignerEndBegin,
-                                    targetLength - alignerEndBegin);
+    StripedSmithWaterman::Aligner alignerRight(ac.MatchScore, ac.MismatchPenalty, ac.GapOpenPenalty,
+                                               ac.GapExtPenalty);
+    auto alignerRightBegin = std::max(targetLength - barcodeLengthWSpacing, 0);
+    alignerRight.SetReferenceSequence(target.c_str() + alignerRightBegin,
+                                      targetLength - alignerRightBegin);
 
     auto AlignTo = [&](StripedSmithWaterman::Aligner& aligner) {
         std::vector<int> scores(queries.size(), 0);
-        std::vector<int> scoresRev(queries.size(), 0);
+        std::vector<int> scoresRC(queries.size(), 0);
 
         for (size_t i = 0; i < queries.size(); ++i) {
             scores[i] = AlignForward(aligner, queries[i]).sw_score;
-            scoresRev[i] = AlignRC(aligner, queries[i]).sw_score;
+            scoresRC[i] = AlignRC(aligner, queries[i]).sw_score;
         }
 
-        return std::make_pair(scores, scoresRev);
+        return std::make_pair(scores, scoresRC);
     };
 
     auto GetBestIndex = [&](std::vector<int>& v) {
@@ -321,62 +312,101 @@ BarcodeHit SimdNeedleWunschAlignment(const AlignerConfig& ac, const std::string&
         return std::make_pair(idx.front(), bq);
     };
 
-    if (mode == Mode::SYMMETRIC && tryRC) {
-        auto ComputeCombinedScore = [&](std::vector<int>* scores, std::vector<int>* scoresRev) {
-            std::vector<int> scoresBegin;
-            std::vector<int> scoresRevBegin;
-            std::tie(scoresBegin, scoresRevBegin) = AlignTo(alignerBegin);
+    if (mode == Mode::ASYMMETRIC) {
 
-            std::vector<int> scoresEnd;
-            std::vector<int> scoresRevEnd;
-            std::tie(scoresEnd, scoresRevEnd) = AlignTo(alignerEnd);
+        auto Compute = [&](StripedSmithWaterman::Aligner& aligner, int* idx, int* score, int* clip,
+                           bool left) {
+            std::vector<int> scores;
+            std::vector<int> scoresRC;
+            std::tie(scores, scoresRC) = AlignTo(aligner);
 
-            assert(scoresBegin.size() == scoresRevEnd.size());
-            for (size_t i = 0; i < scoresBegin.size(); ++i)
-                scores->emplace_back((scoresBegin.at(i) + scoresRevEnd.at(i)) / 2.0);
+            int idxFwd;
+            int scoreFwd;
+            std::tie(idxFwd, scoreFwd) = GetBestIndex(scores);
 
-            assert(scoresRevBegin.size() == scoresRevEnd.size());
-            for (size_t i = 0; i < scoresBegin.size(); ++i)
-                scoresRev->emplace_back((scoresRevBegin.at(i) + scoresEnd.at(i)) / 2.0);
+            int scoreRev;
+            int idxRev;
+            std::tie(idxRev, scoreRev) = GetBestIndex(scoresRC);
+
+            if (scoreFwd > scoreRev) {
+                *score = scoreFwd;
+                *idx = idxFwd;
+                if (left)
+                    *clip = AlignForward(aligner, queries[*idx]).ref_end;
+                else
+                    *clip = alignerRightBegin + AlignForward(alignerRight, queries[*idx]).ref_begin;
+            } else {
+                *score = scoreRev;
+                *idx = idxRev;
+                if (left)
+                    *clip = AlignRC(aligner, queries[*idx]).ref_end;
+                else
+                    *clip = alignerRightBegin + AlignRC(alignerRight, queries[*idx]).ref_begin;
+            }
+        };
+
+        int leftIdx;
+        int rightIdx;
+        int leftScore;
+        int rightScore;
+        int clipLeft;
+        int clipRight;
+        Compute(alignerLeft, &leftIdx, &leftScore, &clipLeft, true);
+        Compute(alignerRight, &rightIdx, &rightScore, &clipRight, false);
+
+        return BarcodeHit(leftIdx, rightIdx, (leftScore + rightScore) / 2.0, clipLeft, clipRight);
+    } else if (mode == Mode::SYMMETRIC && tryRC) {
+        auto ComputeCombinedScore = [&](std::vector<int>* scores, std::vector<int>* scoresRC) {
+            std::vector<int> scoresLeft;
+            std::vector<int> scoresRCLeft;
+            std::tie(scoresLeft, scoresRCLeft) = AlignTo(alignerLeft);
+
+            std::vector<int> scoresRight;
+            std::vector<int> scoresRCRight;
+            std::tie(scoresRight, scoresRCRight) = AlignTo(alignerRight);
+
+            assert(scoresLeft.size() == scoresRCRight.size());
+            for (size_t i = 0; i < scoresLeft.size(); ++i)
+                scores->emplace_back((scoresLeft.at(i) + scoresRCRight.at(i)) / 2.0);
+
+            assert(scoresRCLeft.size() == scoresRCRight.size());
+            for (size_t i = 0; i < scoresLeft.size(); ++i)
+                scoresRC->emplace_back((scoresRCLeft.at(i) + scoresRight.at(i)) / 2.0);
         };
 
         std::vector<int> scores;
-        std::vector<int> scoresRev;
-        ComputeCombinedScore(&scores, &scoresRev);
+        std::vector<int> scoresRC;
+        ComputeCombinedScore(&scores, &scoresRC);
 
-        int forwardScore;
-        int forwardIdx;
-        std::tie(forwardIdx, forwardScore) = GetBestIndex(scores);
-        int revScore;
-        int revIdx;
-        std::tie(revIdx, revScore) = GetBestIndex(scoresRev);
+        int scoreFwd;
+        int idxFwd;
+        std::tie(idxFwd, scoreFwd) = GetBestIndex(scores);
+        int scoreRev;
+        int idxRev;
+        std::tie(idxRev, scoreRev) = GetBestIndex(scoresRC);
 
         int idx;
         int score;
-        int clipStart;
-        int clipEnd;
-        StripedSmithWaterman::Alignment alignmentBegin;
-        StripedSmithWaterman::Alignment alignmentEnd;
-        if (forwardScore > revScore) {
-            score = forwardScore;
-            idx = forwardIdx;
-            alignmentBegin = AlignForward(alignerBegin, queries[idx]);
-            alignmentEnd = AlignRC(alignerEnd, queries[idx]);
+        int clipLeft;
+        int clipRight;
+        if (scoreFwd > scoreRev) {
+            score = scoreFwd;
+            idx = idxFwd;
+            clipLeft = AlignForward(alignerLeft, queries[idx]).ref_end;
+            clipRight = alignerRightBegin + AlignRC(alignerRight, queries[idx]).ref_begin;
         } else {
-            score = revScore;
-            idx = revIdx;
-            alignmentBegin = AlignRC(alignerBegin, queries[idx]);
-            alignmentEnd = AlignForward(alignerEnd, queries[idx]);
+            score = scoreRev;
+            idx = idxRev;
+            clipLeft = AlignRC(alignerLeft, queries[idx]).ref_end;
+            clipRight = alignerRightBegin + AlignForward(alignerRight, queries[idx]).ref_begin;
         }
-        clipStart = alignmentBegin.ref_end;
-        clipEnd = alignerEndBegin + alignmentEnd.ref_begin;
 
-        return BarcodeHit(idx, score, clipStart, clipEnd);
+        return BarcodeHit(idx, score, clipLeft, clipRight);
     } else if (mode == Mode::SYMMETRIC && !tryRC) {
         auto ComputeCombinedForwardScore = [&](std::vector<int>* scores) {
             for (size_t i = 0; i < queries.size(); ++i) {
-                (*scores)[i] = (AlignForward(alignerBegin, queries[i]).sw_score +
-                                AlignRC(alignerEnd, queries[i]).sw_score) /
+                (*scores)[i] = (AlignForward(alignerLeft, queries[i]).sw_score +
+                                AlignRC(alignerRight, queries[i]).sw_score) /
                                ac.MatchScore;
             }
         };
@@ -387,12 +417,14 @@ BarcodeHit SimdNeedleWunschAlignment(const AlignerConfig& ac, const std::string&
         int score;
         int idx;
         std::tie(idx, score) = GetBestIndex(scores);
-        int clipStart = std::max(0, AlignForward(alignerBegin, queries[idx]).ref_end);
-        int clipEnd =
-            std::max(targetLength, alignerEndBegin + AlignRC(alignerEnd, queries[idx]).ref_begin);
+        int clipLeft = std::max(0, AlignForward(alignerLeft, queries[idx]).ref_end);
+        int clipRight = std::max(targetLength,
+                                 alignerRightBegin + AlignRC(alignerRight, queries[idx]).ref_begin);
 
-        return BarcodeHit(idx, score, clipStart, clipEnd);
+        return BarcodeHit(idx, score, clipLeft, clipRight);
     }
+
+    throw std::runtime_error("Unknown barcoding mode");
 }
 
 static int Runner(const PacBio::CLI::Results& options)
@@ -464,11 +496,11 @@ static int Runner(const PacBio::CLI::Results& options)
                     std::string report;
                     BarcodeHit bh = SimdNeedleWunschAlignment(
                         ac, r.Sequence(), barcodes, StringToMode(mode), tryRC, windowSizeMult);
-                    bool aboveMinLength = (bh.ClipEnd - bh.ClipStart) >= minLength;
+                    bool aboveMinLength = (bh.ClipRight - bh.ClipStart) >= minLength;
                     bool aboveMinScore = bh.Bq >= minScore;
                     if (aboveMinLength && aboveMinScore) {
-                        r.Clip(BAM::ClipType::CLIP_TO_QUERY, bh.ClipStart, bh.ClipEnd);
-                        r.Barcodes(std::make_pair(bh.Idx, bh.Idx));
+                        r.Clip(BAM::ClipType::CLIP_TO_QUERY, bh.ClipStart, bh.ClipRight);
+                        r.Barcodes(std::make_pair(bh.IdxL, bh.IdxR));
                         r.BarcodeQuality(bh.Bq);
                         report = r.FullName() + "\t" + std::string(bh);
                         recordOut = std::move(r);
@@ -486,7 +518,7 @@ static int Runner(const PacBio::CLI::Results& options)
         }
 
         std::ofstream report(prefix + ".demux.report");
-        report << "ZMW\tIndex\tScore\tClipStar\tClipEnd" << std::endl;
+        report << "ZMW\tBcLeft\tBcRight\tScore\tClipLeft\tClipRight" << std::endl;
 
         for (auto& item : v) {
             auto p = item.get();
