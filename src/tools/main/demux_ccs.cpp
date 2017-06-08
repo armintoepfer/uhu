@@ -66,10 +66,9 @@
 
 namespace PacBio {
 namespace Demux {
-
 struct Barcode
 {
-    Barcode(std::string name, std::string bases) : Name(name), Bases(bases) {}
+    Barcode(const std::string& name, const std::string& bases) : Name(name), Bases(bases) {}
     std::string Name;
     std::string Bases;
 };
@@ -100,6 +99,21 @@ struct BarcodeHit
     }
 };
 
+enum class Mode : int
+{
+    SYMMETRIC = 0,
+    SYMMETRIC_BOTH
+};
+
+static Mode StringToMode(const std::string& mode)
+{
+    if (mode == "symmetric")
+        return Mode::SYMMETRIC;
+    else if (mode == "symmetric_both")
+        return Mode::SYMMETRIC_BOTH;
+    return Mode::SYMMETRIC;
+}
+
 static PacBio::CLI::Interface CreateCLI()
 {
     using Option = PacBio::CLI::Option;
@@ -112,7 +126,10 @@ static PacBio::CLI::Interface CreateCLI()
 
     // clang-format off
     i.AddOptions({
-        {"tryRC",     {"t","try-rc"},   "Try barcodes also as reverse complements.", Option::BoolType()},
+        {"mode", {"m","mode"},
+         "Barcoding mode. Suffix \"_both\" indicates that barcodes are also tested as reverse complements."
+         " Available: symmetric, symmetric_both",
+         Option::StringType("symmetric"), {"symmetric", "symmetric_both"}},
         {"minScore",  {"s","min-score"},  "Minimum barcode score.", Option::IntType(51)},
         {"minLength", {"l","min-length"}, "Minimum sequence length after clipping.", Option::IntType(50)}
     });
@@ -201,7 +218,7 @@ static std::string ReverseComplement(const std::string& input)
 }
 
 BarcodeHit SimdNeedleWunschAlignment(const std::string& target, const std::vector<Barcode>& queries,
-                                     bool tryBothDirections)
+                                     Mode mode)
 {
     int barcodeLength = queries.front().Bases.size();
     int barcodeLengthWSpacing = barcodeLength * 1.2;
@@ -252,7 +269,7 @@ BarcodeHit SimdNeedleWunschAlignment(const std::string& target, const std::vecto
         return std::make_pair(idx.front(), bq);
     };
 
-    if (tryBothDirections) {
+    if (mode == Mode::SYMMETRIC_BOTH) {
 
         auto ComputeCombinedScore = [&AlignForward, &AlignRC, &AlignTo, &alignerBegin, &alignerEnd](
             std::vector<int>* scores, std::vector<int>* scoresRev) {
@@ -305,7 +322,7 @@ BarcodeHit SimdNeedleWunschAlignment(const std::string& target, const std::vecto
         clipEnd = alignerEndBegin + alignmentEnd.ref_begin;
 
         return BarcodeHit(idx, score, clipStart, clipEnd);
-    } else {
+    } else if (mode == Mode::SYMMETRIC) {
 
         auto ComputeCombinedForwardScore = [&AlignForward, &AlignRC, &queries, &alignerBegin,
                                             &alignerEnd](std::vector<int>* scores) {
@@ -339,6 +356,7 @@ static int Runner(const PacBio::CLI::Results& options)
     }
 
     const bool tryRC = options["tryRC"];
+    const std::string mode = options["mode"];
     const int minScore = options["minScore"];
     const int minLength = options["minLength"];
 
@@ -389,11 +407,11 @@ static int Runner(const PacBio::CLI::Results& options)
                 writer.reset(new BAM::BamWriter(prefix + ".demux.bam", r.Header().DeepCopy()));
             }
             v.push_back(Uhu::Threadpool::DefaultThreadPool::submitJob(
-                [&barcodes, &minScore, &minLength, &tryRC, &belowMinLength, &belowMinScore,
-                 &belowBoth, &aboveThresholds](BAM::BamRecord r) {
+                [&](BAM::BamRecord r) {
                     BAM::BamRecord recordOut;
                     std::string report;
-                    BarcodeHit bh = SimdNeedleWunschAlignment(r.Sequence(), barcodes, tryRC);
+                    BarcodeHit bh =
+                        SimdNeedleWunschAlignment(r.Sequence(), barcodes, StringToMode(mode));
                     bool aboveMinLength = (bh.ClipEnd - bh.ClipStart) >= minLength;
                     bool aboveMinScore = bh.Bq >= minScore;
                     if (aboveMinLength && aboveMinScore) {
