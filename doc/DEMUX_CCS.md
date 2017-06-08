@@ -40,3 +40,10 @@ If your barcodes are not in correct direction, please try
 For tailed, please use
 
     --mode symmetric --try-rc
+
+### Asymmetric
+For asymmetric, we try every barcode as given and reverse complement for the
+left and right side of the ccs read separately, find the best matching barcode,
+and report them together; please use
+
+    --mode asymmetric
