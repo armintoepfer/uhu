@@ -8,6 +8,10 @@
 
 ## INSTALL
 
+Building from scratch requires system-wide installed boost (>=1.58.0),
+cmake (3.2), and a c++14 compiler (>=gcc-6, clang). `ninja` or
+`make` is used to build (ninja is faster than make).
+
   ```sh
   git clone https://github.com/armintoepfer/uhu.git && cd uhu
   git submodule update --init
@@ -19,18 +23,5 @@
 
 ## TOOLS
 
-### zmw_stats
-Extracts the following metrics for each ZMW to standard out:
- - ZMW ID
- - Number of counts for each CX tag between 0 - 15
- - Forward barcode
- - Barcode Score
- - Number of Subreads
- - Subread Mean Length
- - Subread Median Length
- - Subread Length Standard Deviation
-
-### demux_ccs
-Demultiplexes CCS reads. Output is BAM. Only symmetric mode is supported.
-Reads below 50 bp after demultiplexing are omitted. Barcode sequences get
-removed and `bq` and `bc` tags added.
+- [Demultiplex CCS reads `demux_ccs`](doc/DEMUX_CCS.md)
+- [Extract ZMW stats `zmw_stats`](doc/ZMW_STATS.md)
