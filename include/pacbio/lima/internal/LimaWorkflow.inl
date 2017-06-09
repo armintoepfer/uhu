@@ -35,13 +35,12 @@
 
 // Author: Armin Töpfer
 
-#include <pbcopper/cli/CLI.h>
-
-#include <pacbio/lima/LimaSettings.h>
-#include <pacbio/lima/LimaWorkflow.h>
-
-int main(int argc, char* argv[])
+namespace PacBio {
+namespace Lima {
+inline std::ostream& operator<<(std::ostream& stream, const BarcodeHit& bh)
 {
-    return PacBio::CLI::Run(argc, argv, PacBio::Lima::LimaSettings::CreateCLI(),
-                            &PacBio::Lima::Lima::Runner);
+    stream << std::string(bh);
+    return stream;
+}
+}
 }

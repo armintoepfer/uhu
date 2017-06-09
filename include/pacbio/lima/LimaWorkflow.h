@@ -1,0 +1,140 @@
+// Copyright (c) 2017, Pacific Biosciences of California, Inc.
+//
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted (subject to the limitations in the
+// disclaimer below) provided that the following conditions are met:
+//
+//  * Redistributions of source code must retain the above copyright
+//    notice, this list of conditions and the following disclaimer.
+//
+//  * Redistributions in binary form must reproduce the above
+//    copyright notice, this list of conditions and the following
+//    disclaimer in the documentation and/or other materials provided
+//    with the distribution.
+//
+//  * Neither the name of Pacific Biosciences nor the names of its
+//    contributors may be used to endorse or promote products derived
+//    from this software without specific prior written permission.
+//
+// NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE
+// GRANTED BY THIS LICENSE. THIS SOFTWARE IS PROVIDED BY PACIFIC
+// BIOSCIENCES AND ITS CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
+// WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+// OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL PACIFIC BIOSCIENCES OR ITS
+// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+// USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+// ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+// OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+// SUCH DAMAGE.
+
+// Author: Armin Töpfer
+
+#pragma once
+
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace BAM {
+namespace internal {
+class IQuery;
+}
+}
+
+namespace StripedSmithWaterman {
+struct Alignment;
+class Aligner;
+}
+
+namespace PacBio {
+namespace Lima {
+struct LimaSettings;
+
+struct AlignerConfig
+{
+    AlignerConfig(uint8_t matchScore, uint8_t mismatchPenalty, uint8_t gapOpenPenalty,
+                  uint8_t gapExtPenalty)
+        : MatchScore(matchScore)
+        , MismatchPenalty(mismatchPenalty)
+        , GapOpenPenalty(gapOpenPenalty)
+        , GapExtPenalty(gapExtPenalty)
+    {
+    }
+
+    uint8_t MatchScore;
+    uint8_t MismatchPenalty;
+    uint8_t GapOpenPenalty;
+    uint8_t GapExtPenalty;
+};
+
+struct Barcode
+{
+    Barcode(const std::string& name, const std::string& bases) : Name(name), Bases(bases) {}
+    std::string Name;
+    std::string Bases;
+};
+
+struct BarcodeHit
+{
+    BarcodeHit(int idx, int bq, int clipLeft, int clipRight)
+        : IdxL(idx), IdxR(idx), Bq(bq), ClipStart(clipLeft), ClipRight(clipRight)
+    {
+    }
+    BarcodeHit(int idxL, int idxR, int bq, int clipLeft, int clipRight)
+        : IdxL(idxL), IdxR(idxR), Bq(bq), ClipStart(clipLeft), ClipRight(clipRight)
+    {
+    }
+    uint16_t IdxL;
+    uint16_t IdxR;
+    uint8_t Bq;
+    int ClipStart;
+    int ClipRight;
+
+    operator std::string() const;
+};
+
+struct SequenceUtils
+{
+    static char Complement(char base);
+    static std::string ReverseComplement(const std::string& input);
+};
+
+struct AdvancedFileUtils
+{
+    static std::string FilePrefixInfix(const std::string& path);
+    static std::unique_ptr<BAM::internal::IQuery> BamQuery(const std::string& filePath);
+};
+
+struct AlignUtils
+{
+    static StripedSmithWaterman::Alignment Align(StripedSmithWaterman::Aligner& aligner,
+                                                 const char* bases);
+
+    static StripedSmithWaterman::Alignment AlignForward(StripedSmithWaterman::Aligner& aligner,
+                                                        const Barcode& query);
+
+    static StripedSmithWaterman::Alignment AlignRC(StripedSmithWaterman::Aligner& aligner,
+                                                   const Barcode& query);
+};
+
+struct Lima
+{
+    static BarcodeHit TagCCS(const std::string& target, const std::vector<Barcode>& queries,
+                             const LimaSettings& settings);
+
+    static int Runner(const PacBio::CLI::Results& options);
+
+    static void ParsePositionalArgs(const std::vector<std::string>& args,
+                                    std::vector<std::string>* datasetPaths,
+                                    std::vector<Barcode>* barcodes);
+};
+}
+}
+
+#include "pacbio/lima/internal/LimaWorkflow.inl"

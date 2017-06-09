@@ -13,12 +13,40 @@ file(GLOB UHU_TOOLS_CPP  "tools/*.cpp")
 # ssw C library cannot be build with ${LOCAL_COMPILE_FLAGS} since it's C
 add_library(ssw STATIC ${ssw_INCLUDE_DIRS}/ssw.c)
 
+# add main library including everything
+add_library(uhu STATIC
+    ${UHU_HEADER}
+    ${UHU_HIDDEN_HEADER}
+    ${ssw_INCLUDE_DIRS}/ssw_cpp.cpp
+    ${UHU_CPP}
+)
+
+target_link_libraries(uhu
+    ${ZLIB_LIBRARIES}
+    ${HTSLIB_LIBRARIES}
+    ${PacBioBAM_LIBRARIES}
+    ${pbcopper_LIBRARIES}
+    ssw
+)
+
+target_include_directories(uhu PUBLIC
+    ${UHU_IncludeDir}
+    ${Boost_INCLUDE_DIRS}
+    ${ZLIB_INCLUDE_DIRS}
+    ${HTSLIB_INCLUDE_DIRS}
+    ${PacBioBAM_INCLUDE_DIRS}
+    ${pbcopper_INCLUDE_DIRS}
+    ${ssw_INCLUDE_DIRS}
+)
+
+set_target_properties(uhu PROPERTIES COMPILE_FLAGS ${LOCAL_COMPILE_FLAGS})
+if (LOCAL_LINK_FLAGS)
+    set_target_properties(uhu PROPERTIES LINK_FLAGS ${LOCAL_LINK_FLAGS})
+endif()
+
 if (UHU_build_bin)
     function(create_exe exeName)
-        add_executable(${exeName}
-            ${UHU_SourceDir}/tools/main/${exeName}.cpp
-            ${ssw_INCLUDE_DIRS}/ssw_cpp.cpp
-        )
+        add_executable(${exeName} ${UHU_SourceDir}/tools/main/${exeName}.cpp)
 
         set_target_properties(${exeName} PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -27,22 +55,7 @@ if (UHU_build_bin)
         target_link_libraries(${exeName}
             ${CMAKE_THREAD_LIBS_INIT}
             ${CMAKE_DL_LIBS}
-            ${ZLIB_LIBRARIES}
-            ${HTSLIB_LIBRARIES}
-            ${PacBioBAM_LIBRARIES}
-            ${pbcopper_LIBRARIES}
-            ssw
-        )
-
-        target_include_directories(${exeName} PUBLIC
-            ${UHU_IncludeDir}
-            ${CMAKE_BINARY_DIR}/generated
-            ${Boost_INCLUDE_DIRS}
-            ${ZLIB_INCLUDE_DIRS}
-            ${HTSLIB_INCLUDE_DIRS}
-            ${PacBioBAM_INCLUDE_DIRS}
-            ${pbcopper_INCLUDE_DIRS}
-            ${ssw_INCLUDE_DIRS}
+            uhutools
         )
 
         install(TARGETS ${exeName} RUNTIME DESTINATION bin)
@@ -52,6 +65,16 @@ if (UHU_build_bin)
         endif()
     endfunction()
 
-    create_exe(zmw_stats)
+    add_library(uhutools STATIC
+        ${UHU_TOOLS_CPP}
+    )
+
+    target_link_libraries(uhutools uhu)
+
+    set_target_properties(uhutools PROPERTIES COMPILE_FLAGS ${LOCAL_COMPILE_FLAGS})
+    if (LOCAL_LINK_FLAGS)
+        set_target_properties(uhutools PROPERTIES LINK_FLAGS ${LOCAL_LINK_FLAGS})
+    endif()
+
     create_exe(lima)
 endif()
