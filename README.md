@@ -25,3 +25,5 @@ cmake (3.2), and a c++14 compiler (>=gcc-6, clang). `ninja` or
   cmake -GNinja -DCMAKE_INSTALL_PREFIX=~/bin .. && ninja
   ninja install
   ```
+
+Always start with a fresh build directory after pulling new commits.
