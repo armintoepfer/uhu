@@ -140,8 +140,7 @@ static PacBio::CLI::Interface CreateCLI()
 {
     using Option = PacBio::CLI::Option;
 
-    PacBio::CLI::Interface i{"demux_ccs", "Demultiplex Barcoded CCS Data and Clip Barcodes",
-                             "0.3.0"};
+    PacBio::CLI::Interface i{"lima", "Demultiplex Barcoded CCS Data and Clip Barcodes", "0.3.0"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
@@ -479,7 +478,8 @@ static int Runner(const PacBio::CLI::Results& options)
     std::map<int, BAM::BamRecord> map;
     for (const auto& datasetPath : datasetPaths) {
         auto query = BamQuery(datasetPath);
-        std::vector<Uhu::Threadpool::ThreadPool::TaskFuture<std::pair<BAM::BamRecord, std::string>>>
+        std::vector<
+            Uhu::Threadpool::ThreadPool::TaskFuture<std::tuple<BAM::BamRecord, std::string, bool>>>
             v;
         std::string prefix = FilePrefixInfix(datasetPath);
         std::atomic_int belowMinLength(0);
@@ -498,11 +498,11 @@ static int Runner(const PacBio::CLI::Results& options)
                         ac, r.Sequence(), barcodes, StringToMode(mode), tryRC, windowSizeMult);
                     bool aboveMinLength = (bh.ClipRight - bh.ClipStart) >= minLength;
                     bool aboveMinScore = bh.Bq >= minScore;
+                    report = r.FullName() + "\t" + std::string(bh);
                     if (aboveMinLength && aboveMinScore) {
                         r.Clip(BAM::ClipType::CLIP_TO_QUERY, bh.ClipStart, bh.ClipRight);
                         r.Barcodes(std::make_pair(bh.IdxL, bh.IdxR));
                         r.BarcodeQuality(bh.Bq);
-                        report = r.FullName() + "\t" + std::string(bh);
                         recordOut = std::move(r);
                         ++aboveThresholds;
                     } else if (!aboveMinLength && !aboveMinScore) {
@@ -512,7 +512,8 @@ static int Runner(const PacBio::CLI::Results& options)
                     } else if (!aboveMinScore) {
                         ++belowMinScore;
                     }
-                    return std::make_pair(std::move(recordOut), report);
+                    return std::make_tuple(std::move(recordOut), report,
+                                           aboveMinLength && aboveMinScore);
                 },
                 r));
         }
@@ -522,10 +523,8 @@ static int Runner(const PacBio::CLI::Results& options)
 
         for (auto& item : v) {
             auto p = item.get();
-            if (!p.second.empty()) {
-                writer->Write(p.first);
-                report << p.second << std::endl;
-            }
+            if (std::get<2>(p)) writer->Write(std::get<0>(p));
+            report << std::get<1>(p) << std::endl;
         }
 
         std::ofstream summary(prefix + ".demux.summary");

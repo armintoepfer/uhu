@@ -2,9 +2,14 @@
   <img src="doc/img/uhu.png" alt="uhu logos" width="150px"/>
 </p>
 <h1 align="center">UHU</h1>
-<p align="center">Sandbox Tools for PacBio Reads</p>
+<p align="center">Sandbox for PacBio Tools</p>
 
 ***
+
+## TOOLS
+
+- [Demultiplex CCS reads `lima`](doc/LIMA.md)
+- [Extract ZMW stats `zmw_stats`](doc/ZMW_STATS.md)
 
 ## INSTALL
 
@@ -20,8 +25,3 @@ cmake (3.2), and a c++14 compiler (>=gcc-6, clang). `ninja` or
   cmake -GNinja -DCMAKE_INSTALL_PREFIX=~/bin .. && ninja
   ninja install
   ```
-
-## TOOLS
-
-- [Demultiplex CCS reads `demux_ccs`](doc/DEMUX_CCS.md)
-- [Extract ZMW stats `zmw_stats`](doc/ZMW_STATS.md)

@@ -53,5 +53,5 @@ if (UHU_build_bin)
     endfunction()
 
     create_exe(zmw_stats)
-    create_exe(demux_ccs)
+    create_exe(lima)
 endif()
