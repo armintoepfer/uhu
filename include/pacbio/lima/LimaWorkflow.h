@@ -82,19 +82,30 @@ struct Barcode
 
 struct BarcodeHit
 {
-    BarcodeHit(int idx, int bq, int clipLeft, int clipRight)
-        : IdxL(idx), IdxR(idx), Bq(bq), ClipStart(clipLeft), ClipRight(clipRight)
+    BarcodeHit() = default;
+    BarcodeHit(int idx, int score, int clip) : Idx(idx), Score(score), Clip(clip) {}
+
+    uint16_t Idx = 0;
+    uint8_t Score = 0;
+    int Clip = 0;
+};
+
+struct BarcodeHitPair
+{
+    BarcodeHitPair(const BarcodeHit& left, const BarcodeHit& right)
+        : Left(left), Right(right), MeanScore((Left.Score + Right.Score) / 2)
     {
     }
-    BarcodeHit(int idxL, int idxR, int bq, int clipLeft, int clipRight)
-        : IdxL(idxL), IdxR(idxR), Bq(bq), ClipStart(clipLeft), ClipRight(clipRight)
+    BarcodeHitPair(BarcodeHit&& left, BarcodeHit&& right)
+        : Left(std::forward<BarcodeHit>(left))
+        , Right(std::forward<BarcodeHit>(right))
+        , MeanScore((Left.Score + Right.Score) / 2)
     {
     }
-    uint16_t IdxL;
-    uint16_t IdxR;
-    uint8_t Bq;
-    int ClipStart;
-    int ClipRight;
+
+    const BarcodeHit Left;
+    const BarcodeHit Right;
+    const uint8_t MeanScore;
 
     operator std::string() const;
 };
@@ -125,8 +136,8 @@ struct AlignUtils
 
 struct Lima
 {
-    static BarcodeHit TagCCS(const std::string& target, const std::vector<Barcode>& queries,
-                             const LimaSettings& settings);
+    static BarcodeHitPair TagCCS(const std::string& target, const std::vector<Barcode>& queries,
+                                 const LimaSettings& settings);
 
     static int Runner(const PacBio::CLI::Results& options);
 

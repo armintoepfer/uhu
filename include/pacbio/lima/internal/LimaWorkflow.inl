@@ -37,7 +37,7 @@
 
 namespace PacBio {
 namespace Lima {
-inline std::ostream& operator<<(std::ostream& stream, const BarcodeHit& bh)
+inline std::ostream& operator<<(std::ostream& stream, const BarcodeHitPair& bh)
 {
     stream << std::string(bh);
     return stream;

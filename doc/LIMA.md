@@ -31,10 +31,12 @@ barcode tags, that passed filters.
 Second file is `prefix.demux.report`, a tsv file about each read, unfiltered.
 Example:
 
-    ZMW                                BcLeft  BcRight  Score  ClipLeft  ClipRight
-    m54011_170105_093642/30867881/ccs  0       50       71     14        2223
-    m54011_170105_093642/30867884/ccs  36      14       89     15        2222
-    m54011_170105_093642/30867886/ccs  3       36       73     15        2214
+    $ head prefix.demux.report | column -t
+    ZMW                                BcLeft  BcRight  ScoreLeft  ScoreRight  Score  ClipLeft  ClipRight
+    m54011_170105_093642/30867881/ccs  0       50       84         59          71     14        2223
+    m54011_170105_093642/30867884/ccs  36      14       78         100         89     15        2222
+    m54011_170105_093642/30867886/ccs  3       36       47         100         73     15        2214
+    m54011_170105_093642/30867887/ccs  10      32       100        100         100    15        2217
 
 ### Summary
 Third file is `prefix.demux.summary`, showing how many reads have been filtered:
