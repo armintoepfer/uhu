@@ -107,6 +107,16 @@ and report them together. Option `--try-rc` is implictly activated, please use
     -e,--gap-ext-penalty   Gap extension penalties for deletions and insertions. [1]
 
 ## FAQ
+### How fast is fast?
+Example: 200 barcodes, asymmetric mode (try each barcode forward and
+reverse-complement), 300,000 CCS reads. On my 2014 iMac with 4 cores + HT:
+
+    3242.43s user 28.80s system 668% cpu 8:09.01 total
+
+Those 8:09 minutes translate into 1.63 milliseconds per ZMW,
+8.15 microseconds per barcode for both sides aligning forward and reverse-complement,
+and 2 microseconds per alignment. This includes IO.
+
 ### Is there a way to show the progress?
 No. Please run `wc -l prefix.demux.report` to get the number of processed ZMWs.
 
