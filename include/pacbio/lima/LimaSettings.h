@@ -64,6 +64,8 @@ struct LimaSettings
     const uint8_t MismatchPenalty;
     const uint8_t GapOpenPenalty;
     const uint8_t GapExtPenalty;
+    const bool NoBam;
+    const bool NoReports;
 
     /// Parses the provided CLI::Results and retrieves a defined set of options.
     LimaSettings(const PacBio::CLI::Results& options);

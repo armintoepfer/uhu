@@ -20,7 +20,7 @@ added, just like bam2bam. Barcodes do not necessarily have to be in the correct
 direction.
 
 ## Output
-*Lima* generates three output files, all starting with the BAM input file name
+*Lima* generates four output files, all starting with the BAM input file name
 prefix.
 
 ### BAM
@@ -32,19 +32,31 @@ Second file is `prefix.demux.report`, a tsv file about each read, unfiltered.
 Example:
 
     $ head prefix.demux.report | column -t
-    ZMW                                BcLeft  BcRight  ScoreLeft  ScoreRight  Score  ClipLeft  ClipRight
-    m54011_170105_093642/30867881/ccs  0       50       84         59          71     14        2223
-    m54011_170105_093642/30867884/ccs  36      14       78         100         89     15        2222
-    m54011_170105_093642/30867886/ccs  3       36       47         100         73     15        2214
-    m54011_170105_093642/30867887/ccs  10      32       100        100         100    15        2217
+    ZMW                                BcLeft  BcRight  ScoreLeft  ScoreRight  MeanScore  ClipLeft  ClipRight
+    m54011_170105_093642/30867881/ccs  0       50       84         59          71         14        2223
+    m54011_170105_093642/30867884/ccs  36      14       78         100         89         15        2222
+    m54011_170105_093642/30867886/ccs  3       36       47         100         73         15        2214
+    m54011_170105_093642/30867887/ccs  10      32       100        100         100        15        2217
 
 ### Summary
-Third file is `prefix.demux.summary`, showing how many reads have been filtered:
+Third file is `prefix.demux.summary`, showing how many reads have been filtered.
+Example:
 
     Above length and score threshold : 979
     Below length and score threshold : 2
     Below length threshold           : 5
     Below score threshold            : 21
+
+### Counts
+Fourth file is `prefix.demux.counts`, a tsv file, shows the counts for each
+observed barcode pair. Example:
+
+    $ cat prefix.demux.counts | column -t
+    IndexLeft  IndexRight  Counts
+    0          0           100
+    0          1           56
+    1          0           5112
+    1          2           846
 
 ## Barcode score
 The barcode score is normalized and between 0 and 100, whereas 0 is no hit and

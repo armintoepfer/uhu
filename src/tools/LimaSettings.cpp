@@ -116,6 +116,22 @@ const PlainOption GapExtPenalty{
     "Gap extension penalties for deletions and insertions.",
     CLI::Option::IntType(1)
 };
+
+const PlainOption NoBam{
+    "NoBam",
+    {"no-bam"},
+    "NoBam",
+    "Do not generate BAM output.",
+    CLI::Option::BoolType()
+};
+
+const PlainOption NoReports{
+    "NoReports",
+    {"no-reports"},
+    "NoReports",
+    "Do not generate reports.",
+    CLI::Option::BoolType()
+};
 // clang-format on
 }  // namespace OptionNames
 
@@ -131,6 +147,8 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     , MismatchPenalty(options[OptionNames::MismatchPenalty])
     , GapOpenPenalty(options[OptionNames::GapOpenPenalty])
     , GapExtPenalty(options[OptionNames::GapExtPenalty])
+    , NoBam(options[OptionNames::NoBam])
+    , NoReports(options[OptionNames::NoReports])
 {
 }
 
@@ -171,6 +189,12 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
         OptionNames::MismatchPenalty,
         OptionNames::GapOpenPenalty,
         OptionNames::GapExtPenalty
+    });
+
+    i.AddGroup("Output Restrictions",
+    {
+        OptionNames::NoBam,
+        OptionNames::NoReports
     });
     // clang-format on
 

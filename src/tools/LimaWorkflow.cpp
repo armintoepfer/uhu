@@ -348,8 +348,8 @@ int Lima::Runner(const PacBio::CLI::Results& options)
     std::map<int, BAM::BamRecord> map;
     for (const auto& datasetPath : datasetPaths) {
         auto query = AdvancedFileUtils::BamQuery(datasetPath);
-        std::vector<
-            Uhu::Threadpool::ThreadPool::TaskFuture<std::tuple<BAM::BamRecord, std::string, bool>>>
+        std::vector<Uhu::Threadpool::ThreadPool::TaskFuture<
+            std::tuple<BAM::BamRecord, std::string, BarcodeHitPair, bool>>>
             v;
         std::string prefix = AdvancedFileUtils::FilePrefixInfix(datasetPath);
         std::atomic_int belowMinLength(0);
@@ -357,7 +357,7 @@ int Lima::Runner(const PacBio::CLI::Results& options)
         std::atomic_int belowBoth(0);
         std::atomic_int aboveThresholds(0);
         for (auto& r : *query) {
-            if (!writer) {
+            if (!writer && !settings.NoBam) {
                 writer.reset(new BAM::BamWriter(prefix + ".demux.bam", r.Header().DeepCopy()));
             }
             v.push_back(Uhu::Threadpool::DefaultThreadPool::submitJob(
@@ -367,12 +367,14 @@ int Lima::Runner(const PacBio::CLI::Results& options)
                     BarcodeHitPair bh = Lima::TagCCS(r.Sequence(), barcodes, settings);
                     bool aboveMinLength = (bh.Right.Clip - bh.Left.Clip) >= settings.MinLength;
                     bool aboveMinScore = bh.MeanScore >= settings.MinScore;
-                    report = r.FullName() + "\t" + std::string(bh);
+                    if (!settings.NoReports) report = r.FullName() + "\t" + std::string(bh);
                     if (aboveMinLength && aboveMinScore) {
-                        r.Clip(BAM::ClipType::CLIP_TO_QUERY, bh.Left.Clip, bh.Right.Clip);
-                        r.Barcodes(std::make_pair(bh.Left.Idx, bh.Right.Idx));
-                        r.BarcodeQuality(bh.MeanScore);
-                        recordOut = std::move(r);
+                        if (!settings.NoBam) {
+                            r.Clip(BAM::ClipType::CLIP_TO_QUERY, bh.Left.Clip, bh.Right.Clip);
+                            r.Barcodes(std::make_pair(bh.Left.Idx, bh.Right.Idx));
+                            r.BarcodeQuality(bh.MeanScore);
+                            recordOut = std::move(r);
+                        }
                         ++aboveThresholds;
                     } else if (!aboveMinLength && !aboveMinScore) {
                         ++belowBoth;
@@ -381,28 +383,47 @@ int Lima::Runner(const PacBio::CLI::Results& options)
                     } else if (!aboveMinScore) {
                         ++belowMinScore;
                     }
-                    return std::make_tuple(std::move(recordOut), report,
+                    return std::make_tuple(std::move(recordOut), report, bh,
                                            aboveMinLength && aboveMinScore);
                 },
                 r));
         }
 
-        std::ofstream report(prefix + ".demux.report");
-        report << "ZMW\tBcLeft\tBcRight\tScoreLeft\tScoreRight\tScore\tClipLeft\tClipRight"
-               << std::endl;
+        std::map<uint8_t, std::map<uint8_t, int>> barcodePairCounts;
 
+        std::ofstream report;
+        if (!settings.NoReports) {
+            report.open(prefix + ".demux.report");
+            report << "ZMW\tIndexLeft\tIndexRight\tScoreLeft\tScoreRight\tMeanScore\tClipLeft\tClip"
+                      "Right"
+                   << std::endl;
+        }
         for (auto& item : v) {
             auto p = item.get();
-            if (std::get<2>(p)) writer->Write(std::get<0>(p));
-            report << std::get<1>(p) << std::endl;
+            if (std::get<3>(p)) {
+                if (!settings.NoBam) writer->Write(std::get<0>(p));
+                if (!settings.NoReports)
+                    ++barcodePairCounts[std::get<2>(p).Left.Idx][std::get<2>(p).Right.Idx];
+            }
+            if (!settings.NoReports) report << std::get<1>(p) << std::endl;
         }
 
-        std::ofstream summary(prefix + ".demux.summary");
-        summary << "Above length and score threshold : " << aboveThresholds << std::endl;
-        summary << "Below length and score threshold : " << belowBoth << std::endl;
-        summary << "Below length threshold           : " << belowMinLength << std::endl;
-        summary << "Below score threshold            : " << belowMinScore << std::endl;
-        writer.reset(nullptr);
+        if (!settings.NoReports) {
+            std::ofstream summary(prefix + ".demux.summary");
+            summary << "Above length and score threshold : " << aboveThresholds << std::endl;
+            summary << "Below length and score threshold : " << belowBoth << std::endl;
+            summary << "Below length threshold           : " << belowMinLength << std::endl;
+            summary << "Below score threshold            : " << belowMinScore << std::endl;
+            writer.reset(nullptr);
+
+            std::ofstream counts(prefix + ".demux.counts");
+            counts << "IndexLeft\tIndexRight\tCounts" << std::endl;
+            for (const auto& left_right_counts : barcodePairCounts)
+                for (const auto& right_counts : left_right_counts.second)
+                    counts << static_cast<int>(left_right_counts.first) << "\t"
+                           << static_cast<int>(right_counts.first) << "\t" << right_counts.second
+                           << std::endl;
+        }
     }
 
     return EXIT_SUCCESS;
