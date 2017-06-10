@@ -49,7 +49,8 @@ Example:
 
 ### Counts
 Fourth file is `prefix.demux.counts`, a tsv file, shows the counts for each
-observed barcode pair. Example:
+observed barcode pair; only those barcode that passed filters are counted.
+Example:
 
     $ cat prefix.demux.counts | column -t
     IndexLeft  IndexRight  Counts
@@ -104,3 +105,22 @@ and report them together. Option `--try-rc` is implictly activated, please use
     -B,--mismatch-penalty  Penalty for a mismatch. [2]
     -O,--gap-open-penalty  Gap open penalties for deletions and insertions. [3]
     -e,--gap-ext-penalty   Gap extension penalties for deletions and insertions. [1]
+
+## FAQ
+### Is there a way to show the progress?
+No. Please run `wc -l prefix.demux.report` to get the number of processed ZMWs.
+
+### Can I set the number of threads?
+Not as of now. *Lima* takes number of cores - 1, except if there is only 1 core
+available, then 1 core :)
+
+### How can I easily plot the score distributions?
+Use `R`. Example:
+
+    r = read.table("~/Downloads/ccs.demux.report", header = TRUE)
+    par(mfrow=c(3,1))
+    hist(r$ScoreLeft,breaks=0:100,xlab="",ylab="Counts",main="Left Barcode Score")
+    hist(r$ScoreRight,breaks=0:100,xlab="",ylab="Counts",main="Right Barcode Score")
+    hist(r$MeanScore,breaks=0:100,xlab="Barcode Score",ylab="Counts",main="Combined Average Barcode Score")
+
+<img src="img/score_hist.png" width="1000px">
