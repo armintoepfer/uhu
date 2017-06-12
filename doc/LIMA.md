@@ -12,12 +12,13 @@
 * [Defaults](#defaults)
 * [Barcoding modes](#barcoding-modes)
 * [Alignment options](#alignment-options)
+* [FAQ](#faq)
 
 ## Scope
 Demultiplexes CCS reads with insane speed, vectorized alignment and parallelized
 processing. In- and output are BAM. Barcode sequences get clipped and `bq` and `bc` tags
 added, just like bam2bam. Barcodes do not necessarily have to be in the correct
-direction.
+direction. Output can be split by barcode.
 
 ## Output
 *Lima* generates four output files, all starting with the BAM input file name
@@ -134,3 +135,9 @@ Use `R`. Example:
     hist(r$MeanScore,breaks=0:100,xlab="Barcode Score",ylab="Counts",main="Combined Average Barcode Score")
 
 <img src="img/score_hist.png" width="1000px">
+
+### Can I split my data by barcode?
+You can either iterate of the `prefix.demux.bam` file N times or use
+`--split-bam`. Each barcode has its own BAM file called
+`prefix.leftIdx-rightIdx.demux.bam`, e.g., `prefix.0-0.demux.bam`.
+This mode consumes more memory, as output cannot be streamed.

@@ -132,6 +132,14 @@ const PlainOption NoReports{
     "Do not generate reports.",
     CLI::Option::BoolType()
 };
+
+const PlainOption SplitBam{
+    "SplitBam",
+    {"split-bam"},
+    "SplitBam",
+    "Split BAM output by barcode pair.",
+    CLI::Option::BoolType()
+};
 // clang-format on
 }  // namespace OptionNames
 
@@ -149,7 +157,10 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     , GapExtPenalty(options[OptionNames::GapExtPenalty])
     , NoBam(options[OptionNames::NoBam])
     , NoReports(options[OptionNames::NoReports])
+    , SplitBam(options[OptionNames::SplitBam])
 {
+    if (SplitBam && NoBam)
+        throw std::runtime_error("Options --split-bam and --no-bam are mutually exclusive!");
 }
 
 PacBio::CLI::Interface LimaSettings::CreateCLI()
@@ -158,7 +169,7 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     using Task = PacBio::CLI::ToolContract::Task;
 
     PacBio::CLI::Interface i{"lima", "Lima, Demultiplex Barcoded CCS Data and Clip Barcodes ",
-                             "0.4.0"};
+                             "0.5.0"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
@@ -194,6 +205,7 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     i.AddGroup("Output Restrictions",
     {
         OptionNames::NoBam,
+        OptionNames::SplitBam,
         OptionNames::NoReports
     });
     // clang-format on

@@ -347,6 +347,7 @@ int Lima::Runner(const PacBio::CLI::Results& options)
 
     std::unique_ptr<BAM::BamWriter> writer;
     std::map<int, BAM::BamRecord> map;
+    BAM::BamHeader header;
     for (const auto& datasetPath : datasetPaths) {
         auto query = AdvancedFileUtils::BamQuery(datasetPath);
         std::vector<Uhu::Threadpool::ThreadPool::TaskFuture<
@@ -358,9 +359,9 @@ int Lima::Runner(const PacBio::CLI::Results& options)
         std::atomic_int belowBoth(0);
         std::atomic_int aboveThresholds(0);
         for (auto& r : *query) {
-            if (!writer && !settings.NoBam) {
+            if (!writer && !settings.NoBam && !settings.SplitBam)
                 writer.reset(new BAM::BamWriter(prefix + ".demux.bam", r.Header().DeepCopy()));
-            }
+            if (settings.SplitBam) header = r.Header().DeepCopy();
             v.push_back(Uhu::Threadpool::DefaultThreadPool::submitJob(
                 [&](BAM::BamRecord r) {
                     BAM::BamRecord recordOut;
@@ -399,14 +400,37 @@ int Lima::Runner(const PacBio::CLI::Results& options)
                       "Right"
                    << std::endl;
         }
+
+        std::map<std::pair<uint8_t, uint8_t>, std::vector<BAM::BamRecord>> barcodeToRecords;
+
         for (auto& item : v) {
             auto p = item.get();
             if (std::get<3>(p)) {
-                if (!settings.NoBam) writer->Write(std::get<0>(p));
+                if (settings.SplitBam)
+                    barcodeToRecords[std::make_pair(std::get<2>(p).Left.Idx,
+                                                    std::get<2>(p).Right.Idx)]
+                        .emplace_back(std::move(std::get<0>(p)));
+                else if (!settings.NoBam)
+                    writer->Write(std::get<0>(p));
                 if (!settings.NoReports)
                     ++barcodePairCounts[std::get<2>(p).Left.Idx][std::get<2>(p).Right.Idx];
             }
             if (!settings.NoReports) report << std::get<1>(p) << std::endl;
+        }
+
+        if (settings.SplitBam) {
+            for (const auto& bc_records : barcodeToRecords) {
+                std::stringstream fileName;
+                fileName << prefix;
+                fileName << ".";
+                fileName << static_cast<int>(bc_records.first.first);
+                fileName << "-";
+                fileName << static_cast<int>(bc_records.first.second);
+                fileName << ".demux.bam";
+                BAM::BamWriter writer(fileName.str(), header);
+                for (const auto& r : bc_records.second)
+                    writer.Write(r);
+            }
         }
 
         if (!settings.NoReports) {
