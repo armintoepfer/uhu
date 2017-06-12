@@ -43,21 +43,13 @@
 
 namespace PacBio {
 namespace Lima {
-enum class Mode : int
-{
-    SYMMETRIC = 0,
-    ASYMMETRIC,
-    UNKNOWN
-};
-
 /// Contains user provided CLI configuration for Lima
 struct LimaSettings
 {
     const std::string CLI;
     const std::vector<std::string> InputFiles;
     const double WindowSizeMult;
-    const bool TryRC;
-    const Mode BarcodingMode;
+    const bool KeepSymmetric;
     const int MinScore;
     const int MinLength;
     const uint8_t MatchScore;
@@ -74,8 +66,6 @@ struct LimaSettings
     /// Given the description of the tool and its version, create all
     /// necessary CLI::Options for the ccs executable.
     static PacBio::CLI::Interface CreateCLI();
-
-    static Mode StringToMode(const std::string& mode);
 };
 }
 }  // ::PacBio::Lima

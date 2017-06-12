@@ -92,6 +92,7 @@ struct BarcodeHit
 
 struct BarcodeHitPair
 {
+    BarcodeHitPair() = default;
     BarcodeHitPair(const BarcodeHit& left, const BarcodeHit& right)
         : Left(left), Right(right), MeanScore((Left.Score + Right.Score) / 2)
     {

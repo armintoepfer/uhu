@@ -174,10 +174,6 @@ StripedSmithWaterman::Alignment AlignUtils::AlignRC(StripedSmithWaterman::Aligne
 BarcodeHitPair Lima::TagCCS(const std::string& target, const std::vector<Barcode>& queries,
                             const LimaSettings& settings)
 {
-
-    if (settings.BarcodingMode == Mode::UNKNOWN)
-        throw std::runtime_error("Unsupported barcoding mode");
-
     int barcodeLength = 0;
     for (const auto& q : queries)
         barcodeLength = std::max(barcodeLength, static_cast<int>(q.Bases.size()));
@@ -218,117 +214,45 @@ BarcodeHitPair Lima::TagCCS(const std::string& target, const std::vector<Barcode
         return std::make_pair(idx.front(), NormalizeScore(v.at(idx.front())));
     };
 
-    BarcodeHit left;
-    BarcodeHit right;
-
-    if (settings.BarcodingMode == Mode::ASYMMETRIC) {
-        auto Compute = [&](StripedSmithWaterman::Aligner& aligner, bool left) {
-            BarcodeHit bc;
-            std::vector<int> scores;
-            std::vector<int> scoresRC;
-            std::tie(scores, scoresRC) = AlignTo(aligner);
-
-            int idxFwd;
-            int scoreFwd;
-            std::tie(idxFwd, scoreFwd) = GetBestIndex(scores);
-
-            int scoreRev;
-            int idxRev;
-            std::tie(idxRev, scoreRev) = GetBestIndex(scoresRC);
-
-            if (scoreFwd > scoreRev) {
-                bc.Score = scoreFwd;
-                bc.Idx = idxFwd;
-                if (left)
-                    bc.Clip = AlignUtils::AlignForward(aligner, queries[bc.Idx]).ref_end;
-                else
-                    bc.Clip = alignerRightBegin +
-                              AlignUtils::AlignForward(alignerRight, queries[bc.Idx]).ref_begin;
-            } else {
-                bc.Score = scoreRev;
-                bc.Idx = idxRev;
-                if (left)
-                    bc.Clip = AlignUtils::AlignRC(aligner, queries[bc.Idx]).ref_end;
-                else
-                    bc.Clip = alignerRightBegin +
-                              AlignUtils::AlignRC(alignerRight, queries[bc.Idx]).ref_begin;
-            }
-
-            return bc;
-        };
-
-        left = Compute(alignerLeft, true);
-        right = Compute(alignerRight, false);
-    } else if (settings.BarcodingMode == Mode::SYMMETRIC && settings.TryRC) {
-        std::vector<int> scoresLeft;
-        std::vector<int> scoresRCLeft;
-        std::tie(scoresLeft, scoresRCLeft) = AlignTo(alignerLeft);
-
-        std::vector<int> scoresRight;
-        std::vector<int> scoresRCRight;
-        std::tie(scoresRight, scoresRCRight) = AlignTo(alignerRight);
-
+    auto Compute = [&](StripedSmithWaterman::Aligner& aligner, bool left) {
+        BarcodeHit bc;
         std::vector<int> scores;
         std::vector<int> scoresRC;
-        assert(scoresLeft.size() == scoresRCRight.size());
-        for (size_t i = 0; i < scoresLeft.size(); ++i)
-            scores.emplace_back(scoresLeft.at(i) + scoresRCRight.at(i));
+        std::tie(scores, scoresRC) = AlignTo(aligner);
 
-        assert(scoresRCLeft.size() == scoresRCRight.size());
-        for (size_t i = 0; i < scoresLeft.size(); ++i)
-            scoresRC.emplace_back(scoresRCLeft.at(i) + scoresRight.at(i));
-
-        int scoreFwd;
         int idxFwd;
+        int scoreFwd;
         std::tie(idxFwd, scoreFwd) = GetBestIndex(scores);
+
         int scoreRev;
         int idxRev;
         std::tie(idxRev, scoreRev) = GetBestIndex(scoresRC);
 
         if (scoreFwd > scoreRev) {
-            left.Idx = idxFwd;
-            right.Idx = idxFwd;
-            left.Score = NormalizeScore(scoresLeft[idxFwd]);
-            right.Score = NormalizeScore(scoresRCRight[idxFwd]);
-            left.Clip = AlignUtils::AlignForward(alignerLeft, queries[idxFwd]).ref_end;
-            right.Clip =
-                alignerRightBegin + AlignUtils::AlignRC(alignerRight, queries[idxFwd]).ref_begin;
+            bc.Score = scoreFwd;
+            bc.Idx = idxFwd;
+            if (left)
+                bc.Clip = AlignUtils::AlignForward(aligner, queries[bc.Idx]).ref_end;
+            else
+                bc.Clip = alignerRightBegin +
+                          AlignUtils::AlignForward(alignerRight, queries[bc.Idx]).ref_begin;
         } else {
-            left.Idx = idxRev;
-            right.Idx = idxRev;
-            left.Score = NormalizeScore(scoresRCLeft[idxRev]);
-            right.Score = NormalizeScore(scoresRight[idxRev]);
-            left.Clip = AlignUtils::AlignRC(alignerLeft, queries[idxRev]).ref_end;
-            right.Clip = alignerRightBegin +
-                         AlignUtils::AlignForward(alignerRight, queries[idxRev]).ref_begin;
-        }
-    } else if (settings.BarcodingMode == Mode::SYMMETRIC && !settings.TryRC) {
-
-        std::vector<int> scores(queries.size(), 0);
-        std::vector<int> scoresL(queries.size(), 0);
-        std::vector<int> scoresR(queries.size(), 0);
-
-        for (size_t i = 0; i < queries.size(); ++i) {
-            scoresL[i] = AlignUtils::AlignForward(alignerLeft, queries[i]).sw_score;
-            scoresR[i] = AlignUtils::AlignRC(alignerRight, queries[i]).sw_score;
-            scores[i] = scoresL[i] + scoresR[i];
+            bc.Score = scoreRev;
+            bc.Idx = idxRev;
+            if (left)
+                bc.Clip = AlignUtils::AlignRC(aligner, queries[bc.Idx]).ref_end;
+            else
+                bc.Clip = alignerRightBegin +
+                          AlignUtils::AlignRC(alignerRight, queries[bc.Idx]).ref_begin;
         }
 
-        int score;
-        int idx;
-        std::tie(idx, score) = GetBestIndex(scores);
-        left.Idx = idx;
-        right.Idx = idx;
-        left.Score = NormalizeScore(scoresL[idx]);
-        right.Score = NormalizeScore(scoresR[idx]);
-        left.Clip = std::max(0, AlignUtils::AlignForward(alignerLeft, queries[idx]).ref_end);
-        right.Clip =
-            std::max(targetLength,
-                     alignerRightBegin + AlignUtils::AlignRC(alignerRight, queries[idx]).ref_begin);
-    }
+        return bc;
+    };
+
+    BarcodeHit left = Compute(alignerLeft, true);
+    BarcodeHit right = Compute(alignerRight, false);
+
     return BarcodeHitPair(std::move(left), std::move(right));
-
-    throw std::runtime_error("Unknown barcoding mode");
 }
 
 int Lima::Runner(const PacBio::CLI::Results& options)
@@ -403,17 +327,26 @@ int Lima::Runner(const PacBio::CLI::Results& options)
 
         std::map<std::pair<uint8_t, uint8_t>, std::vector<BAM::BamRecord>> barcodeToRecords;
 
+        int symmetricCounts = 0;
+        int asymmetricCounts = 0;
         for (auto& item : v) {
             auto p = item.get();
             if (std::get<3>(p)) {
-                if (settings.SplitBam)
-                    barcodeToRecords[std::make_pair(std::get<2>(p).Left.Idx,
-                                                    std::get<2>(p).Right.Idx)]
-                        .emplace_back(std::move(std::get<0>(p)));
-                else if (!settings.NoBam)
-                    writer->Write(std::get<0>(p));
-                if (!settings.NoReports)
-                    ++barcodePairCounts[std::get<2>(p).Left.Idx][std::get<2>(p).Right.Idx];
+                const auto leftIdx = std::get<2>(p).Left.Idx;
+                const auto rightIdx = std::get<2>(p).Right.Idx;
+                if (leftIdx == rightIdx)
+                    ++symmetricCounts;
+                else
+                    ++asymmetricCounts;
+
+                if ((settings.KeepSymmetric && leftIdx == rightIdx) || !settings.KeepSymmetric) {
+                    if (settings.SplitBam)
+                        barcodeToRecords[std::make_pair(leftIdx, rightIdx)].emplace_back(
+                            std::move(std::get<0>(p)));
+                    else if (!settings.NoBam)
+                        writer->Write(std::get<0>(p));
+                    if (!settings.NoReports) ++barcodePairCounts[leftIdx][rightIdx];
+                }
             }
             if (!settings.NoReports) report << std::get<1>(p) << std::endl;
         }
@@ -439,7 +372,9 @@ int Lima::Runner(const PacBio::CLI::Results& options)
             summary << "Below length and score threshold : " << belowBoth << std::endl;
             summary << "Below length threshold           : " << belowMinLength << std::endl;
             summary << "Below score threshold            : " << belowMinScore << std::endl;
-            writer.reset(nullptr);
+            summary << std::endl;
+            summary << "Symmetric                        : " << symmetricCounts << std::endl;
+            summary << "Asymmetric                       : " << asymmetricCounts << std::endl;
 
             std::ofstream counts(prefix + ".demux.counts");
             counts << "IndexLeft\tIndexRight\tCounts" << std::endl;
@@ -449,6 +384,7 @@ int Lima::Runner(const PacBio::CLI::Results& options)
                            << static_cast<int>(right_counts.first) << "\t" << right_counts.second
                            << std::endl;
         }
+        writer.reset(nullptr);
     }
 
     return EXIT_SUCCESS;

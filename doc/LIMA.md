@@ -8,11 +8,18 @@
 
 ## TOC
 * [Scope](#scope)
+* [Workflow](#workflow)
 * [Barcode score](#barcode-score)
 * [Defaults](#defaults)
-* [Barcoding modes](#barcoding-modes)
-* [Alignment options](#alignment-options)
 * [FAQ](#faq)
+  * [How fast is fast?](#how-fast-is-fast)
+  * [Is there a way to show the progress?](#is-there-a-way-to-show-the-progress)
+  * [Can I set the number of threads?](#can-i-set-the-number-of-threads)
+  * [How can I easily plot the score distributions?](#how-can-i-easily-plot-the-score-distributions)
+  * [Can I split my data by barcode?](#can-i-split-my-data-by-barcode)
+  * [Why are asymmetric hits reported in --symmetric mode?](#why-are-asymmetric-hits-reported-in---symmetric-mode)
+  * [Why are symmetric hits reported in the default asymmetric mode?](#why-are-symmetric-hits-reported-in-the-default-asymmetric-mode)
+  * [How do barcode indices correspond to the input sequences?](#how-do-barcode-indices-correspond-to-the-input-sequences)
 
 ## Scope
 Demultiplexes CCS reads with insane speed, vectorized alignment and parallelized
@@ -20,13 +27,25 @@ processing. In- and output are BAM. Barcode sequences get clipped and `bq` and `
 added, just like bam2bam. Barcodes do not necessarily have to be in the correct
 direction. Output can be split by barcode.
 
+## Workflow
+
+<img src="img/barcode.png" width="1000px">
+
+*Lima* processes each input sequence individually.
+For each input sequence, barcodes are called and clipped separately to produce
+the output sequence. For each target barcode, left and right, each of the
+provided sequences is aligned as given and as reverse-complement and the best
+scoring sequence is chosen. This procedure might be called *asymmetric*.
+If only identical barcode pairs are of interest, *symmetric*, please use
+`--symmetric`.
+
 ## Output
 *Lima* generates four output files, all starting with the BAM input file name
 prefix.
 
 ### BAM
 The first file `prefix.demux.bam` contains clipped subreads, annotated with
-barcode tags, that passed filters.
+barcode tags, that passed filters and respects `--symmetric`.
 
 ### Report
 Second file is `prefix.demux.report`, a tsv file about each read, unfiltered.
@@ -40,7 +59,8 @@ Example:
     m54011_170105_093642/30867887/ccs  10      32       100        100         100        15        2217
 
 ### Summary
-Third file is `prefix.demux.summary`, showing how many reads have been filtered.
+Third file is `prefix.demux.summary`, showing how many reads have been filtered
+and how many are *symmetric*/*asymmetric*.
 Example:
 
     Above length and score threshold : 979
@@ -61,7 +81,7 @@ Example:
     1          2           846
 
 ## Barcode score
-The barcode score is normalized and between 0 and 100, whereas 0 is no hit and
+The barcode score is normalized between 0 and 100, whereas 0 is no hit and
 100 perfect match. The provided score is the mean of both normalizated
 barcode scores:
 
@@ -75,33 +95,7 @@ barcode scores:
  - For each barcode, we align it to a subsequence of the begin and end of
    the CCS read. The length of the subsequence is `barcode_length * multiplier`,
    which can be adjusted with `--window-size-mult`.
-
-## Barcoding modes
-Currently we support following modes:
-
-### Symmetric
-For symmetric, please use
-
-    --mode symmetric
-
-If your barcodes are not in correct direction, please try
-
-    --mode symmetric --try-rc
-
-### Tailed
-For tailed, please use
-
-    --mode symmetric --try-rc
-
-### Asymmetric
-For asymmetric, we try every barcode as given and reverse complement for the
-left and right side of the ccs read separately, find the best matching barcode,
-and report them together. Option `--try-rc` is implictly activated, please use
-
-    --mode asymmetric
-
-## Alignment options
-
+ - Alignment options
     -A,--match-score       Score for a sequence match. [2]
     -B,--mismatch-penalty  Penalty for a mismatch. [2]
     -O,--gap-open-penalty  Gap open penalties for deletions and insertions. [3]
@@ -141,3 +135,19 @@ You can either iterate of the `prefix.demux.bam` file N times or use
 `--split-bam`. Each barcode has its own BAM file called
 `prefix.leftIdx-rightIdx.demux.bam`, e.g., `prefix.0-0.demux.bam`.
 This mode consumes more memory, as output cannot be streamed.
+
+### Why are asymmetric hits reported in --symmetric mode?
+*Lima* tries all barcode combinations and `--symmetric` only filters BAM output.
+Sequences flanked by *asymmetric* barcodes are still reported, but are not
+written to BAM. By not enforcing only *symmetric* barcode pairs, *lima* gains
+higher PPV, as your sample might be contaminated and contains unwanted
+barcode pairs; instead of enforcing one *symmetric* bucket, *lima* rather
+filters such sequences. This is a good indicator for badly prepared libraries.
+
+### Why are symmetric hits reported in the default asymmetric mode?
+Even if your sample is labeled *asymmetric*, *symmetric* hits are simply
+sequences flanked by the same barcode.
+
+### How do barcode indices correspond to the input sequences?
+Input barcode sequences are tagged with an incrementing counter. The first
+sequence is barcode `0` and the last barcode `numBarcodes - 1`.

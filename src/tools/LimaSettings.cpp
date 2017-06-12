@@ -44,13 +44,12 @@ namespace Lima {
 namespace OptionNames {
 using PlainOption = Data::PlainOption;
 // clang-format off
-const PlainOption Mode{
-    "mode",
-    { "mode", "m"},
-    "Mode",
-    "Barcoding mode. Available: symmetric.",
-    CLI::Option::StringType("symmetric"),
-    {"symmetric", "asymmetric"}
+const PlainOption KeepSymmetric{
+    "KeepSymmetric",
+    {"s","symmetric"},
+    "KeepSymmetric",
+    "Only keep symmetric barcodes in BAM output.",
+    CLI::Option::BoolType()
 };
 
 const PlainOption TryRC{
@@ -71,7 +70,7 @@ const PlainOption WindowSizeMult{
 
 const PlainOption MinScore{
     "minScore",
-    {"s","min-score"},
+    {"m","min-score"},
     "MinScore",
     "Minimum barcode score.",
     CLI::Option::IntType(51)
@@ -147,8 +146,7 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     : CLI(options.InputCommandLine())
     , InputFiles(options.PositionalArguments())
     , WindowSizeMult(options[OptionNames::WindowSizeMult])
-    , TryRC(options[OptionNames::TryRC])
-    , BarcodingMode(StringToMode(options[OptionNames::Mode]))
+    , KeepSymmetric(options[OptionNames::KeepSymmetric])
     , MinScore(options[OptionNames::MinScore])
     , MinLength(options[OptionNames::MinLength])
     , MatchScore(options[OptionNames::MatchScore])
@@ -180,15 +178,9 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
         {"fasta", "Barcode file", "FASTA_FILE"}
     });
 
-
-    i.AddGroup("Barcode Configuration",
-    {
-        OptionNames::Mode,
-        OptionNames::TryRC
-    });
-
     i.AddGroup("Tuning",
     {
+        OptionNames::KeepSymmetric,
         OptionNames::WindowSizeMult,
         OptionNames::MinScore,
         OptionNames::MinLength
@@ -211,15 +203,6 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     // clang-format on
 
     return i;
-}
-
-Mode LimaSettings::StringToMode(const std::string& mode)
-{
-    if (mode == "symmetric")
-        return Mode::SYMMETRIC;
-    else if (mode == "asymmetric")
-        return Mode::ASYMMETRIC;
-    return Mode::UNKNOWN;
 }
 }
 }  // ::PacBio::Lima
