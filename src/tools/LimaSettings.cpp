@@ -167,7 +167,7 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     using Task = PacBio::CLI::ToolContract::Task;
 
     PacBio::CLI::Interface i{"lima", "Lima, Demultiplex Barcoded CCS Data and Clip Barcodes ",
-                             "0.5.0"};
+                             "0.6.0"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
