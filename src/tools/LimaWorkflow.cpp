@@ -206,13 +206,16 @@ BarcodeHitPair Lima::TagCCS(const std::string& target, const std::vector<Barcode
         return std::make_pair(scores, scoresRC);
     };
 
+    auto NormalizeScore = [&](const double& score) {
+        return std::round(100.0 * score) / (barcodeLength * settings.MatchScore);
+    };
+
     auto GetBestIndex = [&](std::vector<int>& v) {
         std::vector<size_t> idx(v.size());
         std::iota(idx.begin(), idx.end(), 0);
         std::sort(idx.begin(), idx.end(), [&v](size_t i1, size_t i2) { return v[i1] > v[i2]; });
 
-        int bq = std::round(100.0 * v.at(idx.front()) / (barcodeLength * settings.MatchScore));
-        return std::make_pair(idx.front(), bq);
+        return std::make_pair(idx.front(), NormalizeScore(v.at(idx.front())));
     };
 
     BarcodeHit left;
@@ -257,8 +260,6 @@ BarcodeHitPair Lima::TagCCS(const std::string& target, const std::vector<Barcode
         left = Compute(alignerLeft, true);
         right = Compute(alignerRight, false);
     } else if (settings.BarcodingMode == Mode::SYMMETRIC && settings.TryRC) {
-        std::vector<int> scores;
-        std::vector<int> scoresRC;
         std::vector<int> scoresLeft;
         std::vector<int> scoresRCLeft;
         std::tie(scoresLeft, scoresRCLeft) = AlignTo(alignerLeft);
@@ -267,6 +268,8 @@ BarcodeHitPair Lima::TagCCS(const std::string& target, const std::vector<Barcode
         std::vector<int> scoresRCRight;
         std::tie(scoresRight, scoresRCRight) = AlignTo(alignerRight);
 
+        std::vector<int> scores;
+        std::vector<int> scoresRC;
         assert(scoresLeft.size() == scoresRCRight.size());
         for (size_t i = 0; i < scoresLeft.size(); ++i)
             scores.emplace_back(scoresLeft.at(i) + scoresRCRight.at(i));
@@ -282,21 +285,19 @@ BarcodeHitPair Lima::TagCCS(const std::string& target, const std::vector<Barcode
         int idxRev;
         std::tie(idxRev, scoreRev) = GetBestIndex(scoresRC);
 
-        BarcodeHit left;
-        BarcodeHit right;
         if (scoreFwd > scoreRev) {
             left.Idx = idxFwd;
             right.Idx = idxFwd;
-            left.Score = scoresLeft[idxFwd];
-            right.Score = scoresRCRight[idxFwd];
+            left.Score = NormalizeScore(scoresLeft[idxFwd]);
+            right.Score = NormalizeScore(scoresRCRight[idxFwd]);
             left.Clip = AlignUtils::AlignForward(alignerLeft, queries[idxFwd]).ref_end;
             right.Clip =
                 alignerRightBegin + AlignUtils::AlignRC(alignerRight, queries[idxFwd]).ref_begin;
         } else {
             left.Idx = idxRev;
             right.Idx = idxRev;
-            left.Score = scoresRCLeft[idxRev];
-            right.Score = scoresRight[idxRev];
+            left.Score = NormalizeScore(scoresRCLeft[idxRev]);
+            right.Score = NormalizeScore(scoresRight[idxRev]);
             left.Clip = AlignUtils::AlignRC(alignerLeft, queries[idxRev]).ref_end;
             right.Clip = alignerRightBegin +
                          AlignUtils::AlignForward(alignerRight, queries[idxRev]).ref_begin;
@@ -318,8 +319,8 @@ BarcodeHitPair Lima::TagCCS(const std::string& target, const std::vector<Barcode
         std::tie(idx, score) = GetBestIndex(scores);
         left.Idx = idx;
         right.Idx = idx;
-        left.Score = scoresL[idx];
-        right.Score = scoresR[idx];
+        left.Score = NormalizeScore(scoresL[idx]);
+        right.Score = NormalizeScore(scoresR[idx]);
         left.Clip = std::max(0, AlignUtils::AlignForward(alignerLeft, queries[idx]).ref_end);
         right.Clip =
             std::max(targetLength,
