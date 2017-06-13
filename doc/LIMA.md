@@ -91,21 +91,27 @@ and how many are *symmetric*/*asymmetric*.
 
 #### CCS Example
 
-    Above length and score threshold : 979
-    Below length and score threshold : 2
-    Below length threshold           : 5
-    Below score threshold            : 21
+    ZMWs above length and score threshold : 996
+    ZMWs below length and score threshold : 0
+    ZMWs below length threshold           : 0
+    ZMWs below score threshold            : 1
+
+    ZMWs symmetric                        : 927
+    ZMWs asymmetric                       : 69
 
 #### RAW Example
-Since minimal length is not yet implemented, those will be always 0.
+Additional two rows show the number of subreads w.r.t. minimal length filter:
 
-    Above length and score threshold : 10371
-    Below length and score threshold : 0
-    Below length threshold           : 0
-    Below score threshold            : 2215
+    ZMWs above length and score threshold : 1127
+    ZMWs below length and score threshold : 0
+    ZMWs below length threshold           : 0
+    ZMWs below score threshold            : 2025
 
-    Symmetric                        : 10275
-    Asymmetric                       : 96
+    ZMWs symmetric                        : 1013
+    ZMWs asymmetric                       : 114
+
+    Subreads above length                 : 7596
+    Subreads below length                 : 9
 
 ### Counts
 Fourth file is `prefix.demux.counts`, a tsv file, shows the counts for each

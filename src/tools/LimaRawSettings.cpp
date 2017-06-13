@@ -149,7 +149,7 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     , WindowSizeMult(options[OptionNames::WindowSizeMult])
     , KeepSymmetric(options[OptionNames::KeepSymmetric])
     , MinScore(options[OptionNames::MinScore])
-    , MinLength(0)
+    , MinLength(options[OptionNames::MinLength])
     , MatchScore(options[OptionNames::MatchScore])
     , MismatchPenalty(options[OptionNames::MismatchPenalty])
     , GapOpenPenalty(options[OptionNames::GapOpenPenalty])
@@ -183,6 +183,7 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     {
         OptionNames::KeepSymmetric,
         OptionNames::WindowSizeMult,
+        OptionNames::MinLength,
         OptionNames::MinScore
     });
 

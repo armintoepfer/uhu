@@ -225,6 +225,8 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
             scoresLeftRC[i] /= counterLeft;
         }
         left = Compute(scoresLeft, scoresLeftRC, true);
+    } else {
+        left.Clips = clipsLeftV.at(0);
     }
 
     if (counterRight > 0) {
@@ -233,6 +235,8 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
             scoresRightRC[i] /= counterRight;
         }
         right = Compute(scoresRight, scoresRightRC, false);
+    } else {
+        right.Clips = clipsRightV.at(0);
     }
 
     return BarcodeHitPair(std::move(left), std::move(right));
@@ -251,6 +255,8 @@ void LimaWorkflow::Process(const LimaSettings& settings,
             std::tuple<std::vector<BAM::BamRecord>, std::string, BarcodeHitPair, bool>>>
             v;
         Summary summary;
+        std::atomic_int SubreadBelowMinLength{0};
+        std::atomic_int SubreadAboveMinLength{0};
         auto Submit = [&](const std::vector<BAM::BamRecord>& records) {
             std::vector<BAM::BamRecord> recordOut;
             int cumRecordLength = 0;
@@ -258,23 +264,43 @@ void LimaWorkflow::Process(const LimaSettings& settings,
             BarcodeHitPair bh = LimaWorkflow::Tag(records, barcodes, settings);
 
             bool aboveMinScore = bh.MeanScore >= settings.MinScore;
+            bool aboveMinLength = false;
+            if (bh.Right.Clips.size() != bh.Left.Clips.size())
+                throw std::runtime_error("Internal error, clips sizes not equal! " +
+                                         records.at(0).FullName() + " " +
+                                         std::to_string(bh.Left.Clips.size()) + " " +
+                                         std::to_string(bh.Right.Clips.size()));
+            for (size_t i = 0; i < bh.Right.Clips.size(); ++i) {
+                if (bh.Right.Clips.at(i) - bh.Left.Clips.at(i) > settings.MinLength) {
+                    aboveMinLength = true;
+                    break;
+                }
+            }
             if (!settings.NoReports)
                 report = std::to_string(records.at(0).HoleNumber()) + "\t" + std::string(bh);
-            if (aboveMinScore) {
+            if (aboveMinScore && aboveMinLength) {
                 if (!settings.NoBam) {
                     for (size_t i = 0; i < records.size(); ++i) {
-                        auto r = records[i];
                         int clipLeft = bh.Left.Clips.at(i);
                         int clipRight = bh.Right.Clips.at(i);
-
-                        r.Clip(BAM::ClipType::CLIP_TO_QUERY, r.QueryStart() + clipLeft,
-                               r.QueryStart() + clipRight);
-                        r.Barcodes(std::make_pair(bh.Left.Idx, bh.Right.Idx));
-                        r.BarcodeQuality(bh.MeanScore);
-                        recordOut.emplace_back(std::move(r));
+                        if (clipRight - clipLeft > settings.MinLength) {
+                            auto r = records[i];
+                            r.Clip(BAM::ClipType::CLIP_TO_QUERY, r.QueryStart() + clipLeft,
+                                   r.QueryStart() + clipRight);
+                            r.Barcodes(std::make_pair(bh.Left.Idx, bh.Right.Idx));
+                            r.BarcodeQuality(bh.MeanScore);
+                            recordOut.emplace_back(std::move(r));
+                            ++SubreadAboveMinLength;
+                        } else {
+                            ++SubreadBelowMinLength;
+                        }
                     }
                 }
                 ++summary.AboveThresholds;
+            } else if (!aboveMinLength && !aboveMinScore) {
+                ++summary.BelowBoth;
+            } else if (!aboveMinLength) {
+                ++summary.BelowMinLength;
             } else if (!aboveMinScore) {
                 ++summary.BelowMinScore;
             }
@@ -357,6 +383,11 @@ void LimaWorkflow::Process(const LimaSettings& settings,
         if (!settings.NoReports) {
             std::ofstream summaryStream(prefix + ".demux.summary");
             summaryStream << summary;
+            summaryStream << std::endl;
+            summaryStream << "Subreads above length                 : " << SubreadAboveMinLength
+                          << std::endl;
+            summaryStream << "Subreads below length                 : " << SubreadBelowMinLength
+                          << std::endl;
 
             std::ofstream counts(prefix + ".demux.counts");
             counts << "IndexLeft\tIndexRight\tCounts" << std::endl;

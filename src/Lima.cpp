@@ -212,13 +212,13 @@ StripedSmithWaterman::Alignment AlignUtils::AlignRC(StripedSmithWaterman::Aligne
 Summary::operator std::string() const
 {
     std::stringstream summaryStream;
-    summaryStream << "Above length and score threshold : " << AboveThresholds << std::endl;
-    summaryStream << "Below length and score threshold : " << BelowBoth << std::endl;
-    summaryStream << "Below length threshold           : " << BelowMinLength << std::endl;
-    summaryStream << "Below score threshold            : " << BelowMinScore << std::endl;
+    summaryStream << "ZMWs above length and score threshold : " << AboveThresholds << std::endl;
+    summaryStream << "ZMWs below length and score threshold : " << BelowBoth << std::endl;
+    summaryStream << "ZMWs below length threshold           : " << BelowMinLength << std::endl;
+    summaryStream << "ZMWs below score threshold            : " << BelowMinScore << std::endl;
     summaryStream << std::endl;
-    summaryStream << "Symmetric                        : " << SymmetricCounts << std::endl;
-    summaryStream << "Asymmetric                       : " << AsymmetricCounts << std::endl;
+    summaryStream << "ZMWs symmetric                        : " << SymmetricCounts << std::endl;
+    summaryStream << "ZMWs asymmetric                       : " << AsymmetricCounts << std::endl;
     return summaryStream.str();
 }
 }
