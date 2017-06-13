@@ -1,5 +1,5 @@
 <h1 align="center">
-    lima - CCS Barcode Demultiplexer
+    lima - PacBio Barcode Demultiplexer
 </h1>
 
 <p align="center">
@@ -22,10 +22,19 @@
   * [How do barcode indices correspond to the input sequences?](#how-do-barcode-indices-correspond-to-the-input-sequences)
 
 ## Scope
-Demultiplexes CCS reads with insane speed, vectorized alignment and parallelized
+Demultiplexes reads with insane speed, vectorized alignment and parallelized
 processing. In- and output are BAM. Barcode sequences get clipped and `bq` and `bc` tags
 added, just like bam2bam. Barcodes do not necessarily have to be in the correct
 direction. Output can be split by barcode.
+
+## Execution
+Run on CCS data:
+
+    lima movie.ccs.bam barcodes.fasta --ccs
+
+Run on raw subread data:
+
+    lima movie.subreads.bam barcodes.fasta --subreads -A 4 -B 13 -O 7 -E 1
 
 ## Workflow
 

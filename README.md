@@ -8,8 +8,8 @@
 
 ## TOOLS
 
-- [Demultiplex CCS reads `lima`](doc/LIMA.md)
-- [Extract ZMW stats `zmw_stats`](doc/ZMW_STATS.md)
+- [Demultiplex PacBio Reads `lima`](doc/LIMA.md)
+- [Extract ZMW Stats `zmw_stats`](doc/ZMW_STATS.md)
 
 ## INSTALL
 

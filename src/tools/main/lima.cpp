@@ -35,6 +35,8 @@
 
 // Author: Armin Töpfer
 
+#include <stdexcept>
+
 #include <pbcopper/cli/CLI.h>
 
 #include <pacbio/lima/LimaSettings.h>
@@ -42,6 +44,10 @@
 
 int main(int argc, char* argv[])
 {
-    return PacBio::CLI::Run(argc, argv, PacBio::Lima::LimaSettings::CreateCLI(),
-                            &PacBio::Lima::Lima::Runner);
+    try {
+        return PacBio::CLI::Run(argc, argv, PacBio::Lima::LimaSettings::CreateCLI(),
+                                &PacBio::Lima::Lima::Runner);
+    } catch (const std::runtime_error& e) {
+        std::cerr << "ERROR: " << e.what();
+    }
 }

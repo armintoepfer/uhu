@@ -110,7 +110,7 @@ const PlainOption GapOpenPenalty{
 
 const PlainOption GapExtPenalty{
     "gapExtPenalty",
-    {"e", "gap-ext-penalty"},
+    {"E", "gap-ext-penalty"},
     "GapExtPenalty",
     "Gap extension penalties for deletions and insertions.",
     CLI::Option::IntType(1)
@@ -139,6 +139,22 @@ const PlainOption SplitBam{
     "Split BAM output by barcode pair.",
     CLI::Option::BoolType()
 };
+
+const PlainOption CCS{
+    "CCS",
+    {"ccs"},
+    "CCS",
+    "Input is of type CCS.",
+    CLI::Option::BoolType()
+};
+
+const PlainOption RAW{
+    "RAW",
+    {"subreads"},
+    "RAW",
+    "Input is of type RAW.",
+    CLI::Option::BoolType()
+};
 // clang-format on
 }  // namespace OptionNames
 
@@ -156,9 +172,16 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     , NoBam(options[OptionNames::NoBam])
     , NoReports(options[OptionNames::NoReports])
     , SplitBam(options[OptionNames::SplitBam])
+    , CCS(options[OptionNames::CCS])
+    , RAW(options[OptionNames::RAW])
 {
     if (SplitBam && NoBam)
         throw std::runtime_error("Options --split-bam and --no-bam are mutually exclusive!");
+
+    if (!CCS && !RAW) throw std::runtime_error("Please choose either --ccs or --subreads!");
+
+    if (CCS && RAW)
+        throw std::runtime_error("Options --ccs and --subreads are mutually exclusive!");
 }
 
 PacBio::CLI::Interface LimaSettings::CreateCLI()
@@ -166,8 +189,7 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     using Option = PacBio::CLI::Option;
     using Task = PacBio::CLI::ToolContract::Task;
 
-    PacBio::CLI::Interface i{"lima", "Lima, Demultiplex Barcoded CCS Data and Clip Barcodes ",
-                             "0.6.0"};
+    PacBio::CLI::Interface i{"lima", "Lima, Demultiplex Barcoded Data and Clip Barcodes ", "0.7.0"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
@@ -176,6 +198,12 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     i.AddPositionalArguments({
         {"bam", "Source BAM", "BAM_FILE"},
         {"fasta", "Barcode file", "FASTA_FILE"}
+    });
+
+    i.AddGroup("Input type (mandatory choice)",
+    {
+        OptionNames::CCS,
+        OptionNames::RAW
     });
 
     i.AddGroup("Tuning",

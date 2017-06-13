@@ -42,5 +42,11 @@ inline std::ostream& operator<<(std::ostream& stream, const BarcodeHitPair& bh)
     stream << std::string(bh);
     return stream;
 }
+
+inline std::ostream& operator<<(std::ostream& stream, const Summary& s)
+{
+    stream << std::string(s);
+    return stream;
+}
 }
 }

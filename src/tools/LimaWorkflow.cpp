@@ -36,7 +36,6 @@
 // Author: Armin Töpfer
 
 #include <algorithm>
-#include <atomic>
 #include <exception>
 #include <fstream>
 #include <iostream>
@@ -170,6 +169,20 @@ StripedSmithWaterman::Alignment AlignUtils::AlignRC(StripedSmithWaterman::Aligne
     return Align(aligner, revComp.c_str());
 };
 
+// ## Summary ##
+Summary::operator std::string() const
+{
+    std::stringstream summaryStream;
+    summaryStream << "Above length and score threshold : " << AboveThresholds << std::endl;
+    summaryStream << "Below length and score threshold : " << BelowBoth << std::endl;
+    summaryStream << "Below length threshold           : " << BelowMinLength << std::endl;
+    summaryStream << "Below score threshold            : " << BelowMinScore << std::endl;
+    summaryStream << std::endl;
+    summaryStream << "Symmetric                        : " << SymmetricCounts << std::endl;
+    summaryStream << "Asymmetric                       : " << AsymmetricCounts << std::endl;
+    return summaryStream.str();
+}
+
 // ## Lima ##
 BarcodeHitPair Lima::TagCCS(const std::string& target, const std::vector<Barcode>& queries,
                             const LimaSettings& settings)
@@ -255,20 +268,127 @@ BarcodeHitPair Lima::TagCCS(const std::string& target, const std::vector<Barcode
     return BarcodeHitPair(std::move(left), std::move(right));
 }
 
-int Lima::Runner(const PacBio::CLI::Results& options)
+BarcodeHitPair Lima::TagRaw(const std::vector<BAM::BamRecord> records,
+                            const std::vector<Barcode>& queries, const LimaSettings& settings)
 {
-    // Check args size, as pbcopper does not enforce the correct number
-    if (options.PositionalArguments().empty()) {
-        std::cerr << "ERROR: Please provide BAM and Barcode input, see --help" << std::endl;
-        return EXIT_FAILURE;
+    int barcodeLength = 0;
+    for (const auto& q : queries)
+        barcodeLength = std::max(barcodeLength, static_cast<int>(q.Bases.size()));
+    int barcodeLengthWSpacing = barcodeLength * settings.WindowSizeMult;
+
+    size_t numBarcodes = queries.size();
+
+    int counterLeft = 0;
+    std::vector<double> scoresLeft(numBarcodes, 0);
+    std::vector<double> scoresLeftRC(numBarcodes, 0);
+
+    int counterRight = 0;
+    std::vector<double> scoresRight(numBarcodes, 0);
+    std::vector<double> scoresRightRC(numBarcodes, 0);
+
+    for (const auto& r : records) {
+        const int cx = r.LocalContextFlags();
+        bool hasAdapterLeft = cx & static_cast<int>(BAM::LocalContextFlags::ADAPTER_BEFORE);
+        bool hasAdapterRight = cx & static_cast<int>(BAM::LocalContextFlags::ADAPTER_AFTER);
+
+        const auto target = r.Sequence();
+        const int targetLength = target.size();
+
+        StripedSmithWaterman::Aligner alignerLeft(settings.MatchScore, settings.MismatchPenalty,
+                                                  settings.GapOpenPenalty, settings.GapExtPenalty);
+        StripedSmithWaterman::Aligner alignerRight(settings.MatchScore, settings.MismatchPenalty,
+                                                   settings.GapOpenPenalty, settings.GapExtPenalty);
+
+        if (hasAdapterLeft) {
+            alignerLeft.SetReferenceSequence(target.c_str(),
+                                             std::min(targetLength, barcodeLengthWSpacing));
+            for (size_t i = 0; i < queries.size(); ++i) {
+                scoresLeft[i] += AlignUtils::AlignForward(alignerLeft, queries[i]).sw_score;
+                scoresLeftRC[i] += AlignUtils::AlignRC(alignerLeft, queries[i]).sw_score;
+            }
+            ++counterLeft;
+        }
+        if (hasAdapterRight) {
+            int alignerRightBegin = std::max(targetLength - barcodeLengthWSpacing, 0);
+            alignerRight.SetReferenceSequence(target.c_str() + alignerRightBegin,
+                                              targetLength - alignerRightBegin);
+            for (size_t i = 0; i < queries.size(); ++i) {
+                scoresRight[i] += AlignUtils::AlignForward(alignerRight, queries[i]).sw_score;
+                scoresRightRC[i] += AlignUtils::AlignRC(alignerRight, queries[i]).sw_score;
+            }
+            ++counterRight;
+        }
     }
 
-    const LimaSettings settings(options);
+    auto NormalizeScore = [&](const double& score) {
+        return std::round(100.0 * score) / (barcodeLength * settings.MatchScore);
+    };
 
-    std::vector<std::string> datasetPaths;
-    std::vector<Barcode> barcodes;
-    ParsePositionalArgs(options.PositionalArguments(), &datasetPaths, &barcodes);
+    auto GetBestIndex = [&](std::vector<double>& v) {
+        std::vector<size_t> idx(v.size());
+        std::iota(idx.begin(), idx.end(), 0);
+        std::sort(idx.begin(), idx.end(), [&v](size_t i1, size_t i2) { return v[i1] > v[i2]; });
 
+        return std::make_pair(idx.front(), NormalizeScore(v.at(idx.front())));
+    };
+
+    auto Compute = [&](std::vector<double>& scores, std::vector<double>& scoresRC, bool left) {
+        BarcodeHit bc;
+
+        int idxFwd;
+        int scoreFwd;
+        std::tie(idxFwd, scoreFwd) = GetBestIndex(scores);
+
+        int scoreRev;
+        int idxRev;
+        std::tie(idxRev, scoreRev) = GetBestIndex(scoresRC);
+
+        if (scoreFwd > scoreRev) {
+            bc.Score = scoreFwd;
+            bc.Idx = idxFwd;
+            // if (left)
+            //     bc.Clip = AlignUtils::AlignForward(aligner, queries[bc.Idx]).ref_end;
+            // else
+            //     bc.Clip = alignerRightBegin +
+            //               AlignUtils::AlignForward(alignerRight, queries[bc.Idx]).ref_begin;
+        } else {
+            bc.Score = scoreRev;
+            bc.Idx = idxRev;
+            // if (left)
+            //     bc.Clip = AlignUtils::AlignRC(aligner, queries[bc.Idx]).ref_end;
+            // else
+            //     bc.Clip = alignerRightBegin +
+            //               AlignUtils::AlignRC(alignerRight, queries[bc.Idx]).ref_begin;
+        }
+
+        return bc;
+    };
+
+    BarcodeHit left;
+    BarcodeHit right;
+
+    if (counterLeft > 0) {
+        for (size_t i = 0; i < numBarcodes; ++i) {
+            scoresLeft[i] /= counterLeft;
+            scoresLeftRC[i] /= counterLeft;
+        }
+        left = Compute(scoresLeft, scoresLeftRC, true);
+    }
+
+    if (counterRight > 0) {
+        for (size_t i = 0; i < numBarcodes; ++i) {
+            scoresRight[i] /= counterRight;
+            scoresRightRC[i] /= counterRight;
+        }
+        right = Compute(scoresRight, scoresRightRC, false);
+    }
+
+    return BarcodeHitPair(std::move(left), std::move(right));
+}
+
+void Lima::ProcessCCS(const LimaSettings& settings, const std::vector<std::string>& datasetPaths,
+                      const std::vector<Barcode>& barcodes)
+{
     std::unique_ptr<BAM::BamWriter> writer;
     std::map<int, BAM::BamRecord> map;
     BAM::BamHeader header;
@@ -278,10 +398,8 @@ int Lima::Runner(const PacBio::CLI::Results& options)
             std::tuple<BAM::BamRecord, std::string, BarcodeHitPair, bool>>>
             v;
         std::string prefix = AdvancedFileUtils::FilePrefixInfix(datasetPath);
-        std::atomic_int belowMinLength(0);
-        std::atomic_int belowMinScore(0);
-        std::atomic_int belowBoth(0);
-        std::atomic_int aboveThresholds(0);
+
+        Summary summary;
         for (auto& r : *query) {
             if (!writer && !settings.NoBam && !settings.SplitBam)
                 writer.reset(new BAM::BamWriter(prefix + ".demux.bam", r.Header().DeepCopy()));
@@ -301,13 +419,13 @@ int Lima::Runner(const PacBio::CLI::Results& options)
                             r.BarcodeQuality(bh.MeanScore);
                             recordOut = std::move(r);
                         }
-                        ++aboveThresholds;
+                        ++summary.AboveThresholds;
                     } else if (!aboveMinLength && !aboveMinScore) {
-                        ++belowBoth;
+                        ++summary.BelowBoth;
                     } else if (!aboveMinLength) {
-                        ++belowMinLength;
+                        ++summary.BelowMinLength;
                     } else if (!aboveMinScore) {
-                        ++belowMinScore;
+                        ++summary.BelowMinScore;
                     }
                     return std::make_tuple(std::move(recordOut), report, bh,
                                            aboveMinLength && aboveMinScore);
@@ -327,17 +445,15 @@ int Lima::Runner(const PacBio::CLI::Results& options)
 
         std::map<std::pair<uint8_t, uint8_t>, std::vector<BAM::BamRecord>> barcodeToRecords;
 
-        int symmetricCounts = 0;
-        int asymmetricCounts = 0;
         for (auto& item : v) {
             auto p = item.get();
             if (std::get<3>(p)) {
                 const auto leftIdx = std::get<2>(p).Left.Idx;
                 const auto rightIdx = std::get<2>(p).Right.Idx;
                 if (leftIdx == rightIdx)
-                    ++symmetricCounts;
+                    ++summary.SymmetricCounts;
                 else
-                    ++asymmetricCounts;
+                    ++summary.AsymmetricCounts;
 
                 if ((settings.KeepSymmetric && leftIdx == rightIdx) || !settings.KeepSymmetric) {
                     if (settings.SplitBam)
@@ -367,14 +483,8 @@ int Lima::Runner(const PacBio::CLI::Results& options)
         }
 
         if (!settings.NoReports) {
-            std::ofstream summary(prefix + ".demux.summary");
-            summary << "Above length and score threshold : " << aboveThresholds << std::endl;
-            summary << "Below length and score threshold : " << belowBoth << std::endl;
-            summary << "Below length threshold           : " << belowMinLength << std::endl;
-            summary << "Below score threshold            : " << belowMinScore << std::endl;
-            summary << std::endl;
-            summary << "Symmetric                        : " << symmetricCounts << std::endl;
-            summary << "Asymmetric                       : " << asymmetricCounts << std::endl;
+            std::ofstream summaryStream(prefix + ".demux.summary");
+            summaryStream << summary;
 
             std::ofstream counts(prefix + ".demux.counts");
             counts << "IndexLeft\tIndexRight\tCounts" << std::endl;
@@ -386,6 +496,134 @@ int Lima::Runner(const PacBio::CLI::Results& options)
         }
         writer.reset(nullptr);
     }
+}
+
+void Lima::ProcessRaw(const LimaSettings& settings, const std::vector<std::string>& datasetPaths,
+                      const std::vector<Barcode>& barcodes)
+{
+    std::unique_ptr<BAM::BamWriter> writer;
+    std::map<int, std::vector<BAM::BamRecord>> map;
+    BAM::BamHeader header;
+    for (const auto& datasetPath : datasetPaths) {
+        auto query = AdvancedFileUtils::BamQuery(datasetPath);
+        std::vector<Uhu::Threadpool::ThreadPool::TaskFuture<
+            std::tuple<std::vector<BAM::BamRecord>, std::string, BarcodeHitPair, bool>>>
+            v;
+        Summary summary;
+        auto Submit = [&](std::vector<BAM::BamRecord> records) {
+            BAM::BamRecord recordOut;
+            std::string report;
+            BarcodeHitPair bh = Lima::TagRaw(records, barcodes, settings);
+
+            bool aboveMinLength = true;  // (bh.Right.Clip - bh.Left.Clip) >= settings.MinLength;
+            bool aboveMinScore = bh.MeanScore >= settings.MinScore;
+            if (!settings.NoReports)
+                report = std::to_string(records.at(0).HoleNumber()) + "\t" + std::string(bh);
+            if (aboveMinLength && aboveMinScore) {
+                // if (!settings.NoBam) {
+                //     r.Clip(BAM::ClipType::CLIP_TO_QUERY, bh.Left.Clip, bh.Right.Clip);
+                //     r.Barcodes(std::make_pair(bh.Left.Idx, bh.Right.Idx));
+                //     r.BarcodeQuality(bh.MeanScore);
+                //     recordOut = std::move(r);
+                // }
+                ++summary.AboveThresholds;
+            } else if (!aboveMinLength && !aboveMinScore) {
+                ++summary.BelowBoth;
+            } else if (!aboveMinLength) {
+                ++summary.BelowMinLength;
+            } else if (!aboveMinScore) {
+                ++summary.BelowMinScore;
+            }
+            return std::make_tuple(std::move(records), report, bh, aboveMinLength && aboveMinScore);
+        };
+
+        std::string prefix = AdvancedFileUtils::FilePrefixInfix(datasetPath);
+
+        int zmwNum = -1;
+        std::vector<BAM::BamRecord> records;
+        for (auto& r : *query) {
+            if (!writer && !settings.NoBam && !settings.SplitBam)
+                writer.reset(new BAM::BamWriter(prefix + ".demux.bam", r.Header().DeepCopy()));
+            if (settings.SplitBam) header = r.Header().DeepCopy();
+
+            if (zmwNum == -1) {
+                zmwNum = r.HoleNumber();
+            } else if (zmwNum != r.HoleNumber()) {
+                if (!records.empty())
+                    v.push_back(Uhu::Threadpool::DefaultThreadPool::submitJob(Submit, records));
+                zmwNum = r.HoleNumber();
+                records.clear();
+            }
+            records.push_back(r);
+        }
+        if (!records.empty())
+            v.push_back(Uhu::Threadpool::DefaultThreadPool::submitJob(Submit, records));
+
+        std::map<uint8_t, std::map<uint8_t, int>> barcodePairCounts;
+
+        std::ofstream report;
+        if (!settings.NoReports) {
+            report.open(prefix + ".demux.report");
+            report << "ZMW\tIndexLeft\tIndexRight\tScoreLeft\tScoreRight\tMeanScore\tClipLeft\tClip"
+                      "Right"
+                   << std::endl;
+        }
+
+        for (auto& item : v) {
+            auto p = item.get();
+            if (std::get<3>(p)) {
+                const auto leftIdx = std::get<2>(p).Left.Idx;
+                const auto rightIdx = std::get<2>(p).Right.Idx;
+                if (leftIdx == rightIdx)
+                    ++summary.SymmetricCounts;
+                else
+                    ++summary.AsymmetricCounts;
+
+                if ((settings.KeepSymmetric && leftIdx == rightIdx) || !settings.KeepSymmetric) {
+                    // if (settings.SplitBam)
+                    //     barcodeToRecords[std::make_pair(leftIdx, rightIdx)].emplace_back(
+                    //         std::move(std::get<0>(p)));
+                    // else if (!settings.NoBam)
+                    //     writer->Write(std::get<0>(p));
+                    if (!settings.NoReports) ++barcodePairCounts[leftIdx][rightIdx];
+                }
+            }
+            if (!settings.NoReports) report << std::get<1>(p) << std::endl;
+        }
+
+        if (!settings.NoReports) {
+            std::ofstream summaryStream(prefix + ".demux.summary");
+            summaryStream << summary;
+
+            std::ofstream counts(prefix + ".demux.counts");
+            counts << "IndexLeft\tIndexRight\tCounts" << std::endl;
+            for (const auto& left_right_counts : barcodePairCounts)
+                for (const auto& right_counts : left_right_counts.second)
+                    counts << static_cast<int>(left_right_counts.first) << "\t"
+                           << static_cast<int>(right_counts.first) << "\t" << right_counts.second
+                           << std::endl;
+        }
+        writer.reset(nullptr);
+    }
+}
+
+int Lima::Runner(const PacBio::CLI::Results& options)
+{
+    // Check args size, as pbcopper does not enforce the correct number
+    if (options.PositionalArguments().empty()) {
+        std::cerr << "ERROR: Please provide BAM and Barcode input, see --help" << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    const LimaSettings settings(options);
+    std::vector<std::string> datasetPaths;
+    std::vector<Barcode> barcodes;
+    ParsePositionalArgs(options.PositionalArguments(), &datasetPaths, &barcodes);
+
+    if (settings.CCS)
+        ProcessCCS(settings, datasetPaths, barcodes);
+    else if (settings.RAW)
+        ProcessRaw(settings, datasetPaths, barcodes);
 
     return EXIT_SUCCESS;
 }

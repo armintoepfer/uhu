@@ -37,6 +37,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -45,6 +46,7 @@ namespace BAM {
 namespace internal {
 class IQuery;
 }
+class BamRecord;
 }
 
 namespace StripedSmithWaterman {
@@ -111,6 +113,18 @@ struct BarcodeHitPair
     operator std::string() const;
 };
 
+struct Summary
+{
+    std::atomic_int BelowMinLength{0};
+    std::atomic_int BelowMinScore{0};
+    std::atomic_int BelowBoth{0};
+    std::atomic_int AboveThresholds{0};
+    int SymmetricCounts = 0;
+    int AsymmetricCounts = 0;
+
+    operator std::string() const;
+};
+
 struct SequenceUtils
 {
     static char Complement(char base);
@@ -139,6 +153,17 @@ struct Lima
 {
     static BarcodeHitPair TagCCS(const std::string& target, const std::vector<Barcode>& queries,
                                  const LimaSettings& settings);
+
+    static BarcodeHitPair TagRaw(const std::vector<BAM::BamRecord> records,
+                                 const std::vector<Barcode>& queries, const LimaSettings& settings);
+
+    static void ProcessCCS(const LimaSettings& settings,
+                           const std::vector<std::string>& datasetPaths,
+                           const std::vector<Barcode>& barcodes);
+
+    static void ProcessRaw(const LimaSettings& settings,
+                           const std::vector<std::string>& datasetPaths,
+                           const std::vector<Barcode>& barcodes);
 
     static int Runner(const PacBio::CLI::Results& options);
 

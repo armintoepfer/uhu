@@ -59,6 +59,8 @@ struct LimaSettings
     const bool NoBam;
     const bool NoReports;
     const bool SplitBam;
+    const bool CCS;
+    const bool RAW;
 
     /// Parses the provided CLI::Results and retrieves a defined set of options.
     LimaSettings(const PacBio::CLI::Results& options);
