@@ -86,10 +86,19 @@ struct BarcodeHit
 {
     BarcodeHit() = default;
     BarcodeHit(int idx, int score, int clip) : Idx(idx), Score(score), Clip(clip) {}
+    BarcodeHit(int idx, int score, std::vector<int>& clips) : Idx(idx), Score(score), Clips(clips)
+    {
+    }
+    BarcodeHit(int idx, int score, std::vector<int>& scores, std::vector<int>& clips)
+        : Idx(idx), Score(score), Scores(scores), Clips(clips)
+    {
+    }
 
     uint16_t Idx = 0;
     uint8_t Score = 0;
     int Clip = 0;
+    std::vector<int> Scores;
+    std::vector<int> Clips;
 };
 
 struct BarcodeHitPair
@@ -148,30 +157,7 @@ struct AlignUtils
     static StripedSmithWaterman::Alignment AlignRC(StripedSmithWaterman::Aligner& aligner,
                                                    const Barcode& query);
 };
-
-struct Lima
-{
-    static BarcodeHitPair TagCCS(const std::string& target, const std::vector<Barcode>& queries,
-                                 const LimaSettings& settings);
-
-    static BarcodeHitPair TagRaw(const std::vector<BAM::BamRecord> records,
-                                 const std::vector<Barcode>& queries, const LimaSettings& settings);
-
-    static void ProcessCCS(const LimaSettings& settings,
-                           const std::vector<std::string>& datasetPaths,
-                           const std::vector<Barcode>& barcodes);
-
-    static void ProcessRaw(const LimaSettings& settings,
-                           const std::vector<std::string>& datasetPaths,
-                           const std::vector<Barcode>& barcodes);
-
-    static int Runner(const PacBio::CLI::Results& options);
-
-    static void ParsePositionalArgs(const std::vector<std::string>& args,
-                                    std::vector<std::string>* datasetPaths,
-                                    std::vector<Barcode>* barcodes);
-};
 }
 }
 
-#include "pacbio/lima/internal/LimaWorkflow.inl"
+#include "pacbio/lima/internal/Lima.inl"

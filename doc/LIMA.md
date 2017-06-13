@@ -22,7 +22,8 @@
   * [How do barcode indices correspond to the input sequences?](#how-do-barcode-indices-correspond-to-the-input-sequences)
 
 ## Scope
-Demultiplexes reads with insane speed, vectorized alignment and parallelized
+*Lima* is actually two tools, *lima_ccs* and *lima_raw*.
+Both demultiplex reads with insane speed, vectorized alignment and parallelized
 processing. In- and output are BAM. Barcode sequences get clipped and `bq` and `bc` tags
 added, just like bam2bam. Barcodes do not necessarily have to be in the correct
 direction. Output can be split by barcode.
@@ -30,35 +31,42 @@ direction. Output can be split by barcode.
 ## Execution
 Run on CCS data:
 
-    lima movie.ccs.bam barcodes.fasta --ccs
+    lima_ccs movie.ccs.bam barcodes.fasta
 
 Run on raw subread data:
 
-    lima movie.subreads.bam barcodes.fasta --subreads -A 4 -B 13 -O 7 -E 1
+    lima_raw movie.subreads.bam barcodes.fasta
 
 ## Workflow
 
 <img src="img/barcode.png" width="1000px">
 
-*Lima* processes each input sequence individually.
-For each input sequence, barcodes are called and clipped separately to produce
+### CCS
+*lima_ccs* processes each CCS input sequence individually.
+For each CCS input sequence, barcodes are called and clipped separately to produce
 the output sequence. For each target barcode, left and right, each of the
 provided sequences is aligned as given and as reverse-complement and the best
 scoring sequence is chosen. This procedure might be called *asymmetric*.
 If only identical barcode pairs are of interest, *symmetric*, please use
 `--symmetric`.
 
+### RAW
+*lima_raw* processes RAW input sequences per ZMW.
+Barcodes are called for each individual subread, scores are summed per barcode,
+and barcode for the ZMW gets chosen using the score sum.
+
 ## Output
-*Lima* generates four output files, all starting with the BAM input file name
-prefix.
+Both *lima* tools generate four output files, all starting with the BAM input
+file name prefix. Possible differences are explained by example.
 
 ### BAM
-The first file `prefix.demux.bam` contains clipped subreads, annotated with
+The first file `prefix.demux.bam` contains clipped records, annotated with
 barcode tags, that passed filters and respects `--symmetric`.
 
 ### Report
 Second file is `prefix.demux.report`, a tsv file about each read, unfiltered.
-Example:
+
+#### CCS Example
 
     $ head prefix.demux.report | column -t
     ZMW                                BcLeft  BcRight  ScoreLeft  ScoreRight  MeanScore  ClipLeft  ClipRight
@@ -67,15 +75,37 @@ Example:
     m54011_170105_093642/30867886/ccs  3       36       47         100         73         15        2214
     m54011_170105_093642/30867887/ccs  10      32       100        100         100        15        2217
 
+#### RAW Example
+An individual score with `-1` indicates that a leading or trailing adapter is
+missing.
+
+    $ head prefix.demux.report | column -t
+    ZMW      IndexLeft  IndexRight  MeanScoreLeft  MeanScoreRight  MeanScore  ClipsLeft    ClipsRight           ScoresLeft    ScoresRight
+    4391559  2          2           73             100             87         0,14,15,14  1558,2097,2183,2113  -1,56,82,82   100,100,100,-1
+    4457329  2          2           65             85              75         0,15,18     2772,2174,2402       -1,54,76      87,82,-1
+    4522785  3          3           86             87              87         0,15,15,14  2016,2176,2198,2119  -1,100,76,82  73,100,89,-1
+
 ### Summary
 Third file is `prefix.demux.summary`, showing how many reads have been filtered
 and how many are *symmetric*/*asymmetric*.
-Example:
+
+#### CCS Example
 
     Above length and score threshold : 979
     Below length and score threshold : 2
     Below length threshold           : 5
     Below score threshold            : 21
+
+#### RAW Example
+Since minimal length is not yet implemented, those will be always 0.
+
+    Above length and score threshold : 10371
+    Below length and score threshold : 0
+    Below length threshold           : 0
+    Below score threshold            : 2215
+
+    Symmetric                        : 10275
+    Asymmetric                       : 96
 
 ### Counts
 Fourth file is `prefix.demux.counts`, a tsv file, shows the counts for each
@@ -91,24 +121,22 @@ Example:
 
 ## Barcode score
 The barcode score is normalized between 0 and 100, whereas 0 is no hit and
-100 perfect match. The provided score is the mean of both normalizated
-barcode scores:
-
-    score = (left_barcode_ssw_score + right_barcode_ssw_score) / (2 * barcode_length * match_score)
+100 perfect match. The provided mean score is the mean of both normalizated
+barcode scores.
 
 ## Defaults
- - Reads with length below 50 bp after demultiplexing are omitted.
-   Adjusted with `--min-length`
+ - CCS reads with length below 50 bp after demultiplexing are omitted.
+   Adjusted with `--min-length`. No length filter for raw subreads.
  - Reads with barcode score below 50 are omitted.
    Adjust with `--min-score`
  - For each barcode, we align it to a subsequence of the begin and end of
    the CCS read. The length of the subsequence is `barcode_length * multiplier`,
    which can be adjusted with `--window-size-mult`.
  - Alignment options
-    -A,--match-score       Score for a sequence match. [2]
-    -B,--mismatch-penalty  Penalty for a mismatch. [2]
-    -O,--gap-open-penalty  Gap open penalties for deletions and insertions. [3]
-    -e,--gap-ext-penalty   Gap extension penalties for deletions and insertions. [1]
+    -A,--match-score       Score for a sequence match.
+    -B,--mismatch-penalty  Penalty for a mismatch.
+    -O,--gap-open-penalty  Gap open penalties for deletions and insertions.
+    -e,--gap-ext-penalty   Gap extension penalties for deletions and insertions.
 
 ## FAQ
 ### How fast is fast?

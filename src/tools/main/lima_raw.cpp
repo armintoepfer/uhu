@@ -35,39 +35,19 @@
 
 // Author: Armin Töpfer
 
-#pragma once
-
-#include <string>
+#include <stdexcept>
 
 #include <pbcopper/cli/CLI.h>
 
-namespace PacBio {
-namespace Lima {
-/// Contains user provided CLI configuration for Lima
-struct LimaSettings
+#include <pacbio/lima/LimaRawSettings.h>
+#include <pacbio/lima/LimaRawWorkflow.h>
+
+int main(int argc, char* argv[])
 {
-    const std::string CLI;
-    const std::vector<std::string> InputFiles;
-    const double WindowSizeMult;
-    const bool KeepSymmetric;
-    const int MinScore;
-    const int MinLength;
-    const uint8_t MatchScore;
-    const uint8_t MismatchPenalty;
-    const uint8_t GapOpenPenalty;
-    const uint8_t GapExtPenalty;
-    const bool NoBam;
-    const bool NoReports;
-    const bool SplitBam;
-    const bool CCS;
-    const bool RAW;
-
-    /// Parses the provided CLI::Results and retrieves a defined set of options.
-    LimaSettings(const PacBio::CLI::Results& options);
-
-    /// Given the description of the tool and its version, create all
-    /// necessary CLI::Options for the ccs executable.
-    static PacBio::CLI::Interface CreateCLI();
-};
+    try {
+        return PacBio::CLI::Run(argc, argv, PacBio::Lima::RAW::LimaSettings::CreateCLI(),
+                                &PacBio::Lima::RAW::LimaWorkflow::Runner);
+    } catch (const std::runtime_error& e) {
+        std::cerr << "ERROR: " << e.what();
+    }
 }
-}  // ::PacBio::Lima
