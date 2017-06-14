@@ -35,30 +35,19 @@
 
 // Author: Armin Töpfer
 
-#pragma once
+#include <stdexcept>
 
-#include <string>
-#include <vector>
+#include <pbcopper/cli/CLI.h>
 
-#include <pacbio/lima/Lima.h>
+#include <pacbio/lima/LimaSettings.h>
+#include <pacbio/lima/LimaWorkflow.h>
 
-namespace PacBio {
-namespace Lima {
-namespace CCS {
-struct LimaWorkflow
+int main(int argc, char* argv[])
 {
-    static BarcodeHitPair Tag(const std::string& target, const std::vector<Barcode>& queries,
-                              const LimaSettings& settings);
-
-    static void Process(const LimaSettings& settings, const std::vector<std::string>& datasetPaths,
-                        const std::vector<Barcode>& barcodes);
-
-    static int Runner(const PacBio::CLI::Results& options);
-
-    static void ParsePositionalArgs(const std::vector<std::string>& args,
-                                    std::vector<std::string>* datasetPaths,
-                                    std::vector<Barcode>* barcodes);
-};
-}
-}
+    try {
+        return PacBio::CLI::Run(argc, argv, PacBio::Lima::LimaSettings::CreateCLI(),
+                                &PacBio::Lima::LimaWorkflow::Runner);
+    } catch (const std::runtime_error& e) {
+        std::cerr << "ERROR: " << e.what();
+    }
 }

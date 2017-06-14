@@ -20,44 +20,45 @@
   * [Why are asymmetric hits reported in --symmetric mode?](#why-are-asymmetric-hits-reported-in---symmetric-mode)
   * [Why are symmetric hits reported in the default asymmetric mode?](#why-are-symmetric-hits-reported-in-the-default-asymmetric-mode)
   * [How do barcode indices correspond to the input sequences?](#how-do-barcode-indices-correspond-to-the-input-sequences)
+  * [I used the tailed library prep, what options to choose?](#i-used-the-tailed-library-prep,-what-options-to-choose)
+  * [What is different to bam2bam?](#what-is-different-to-bam2bam)
 
 ## Scope
-*Lima* is actually two tools, *lima_ccs* and *lima_raw*.
-Both demultiplex reads with insane speed, vectorized alignment and parallelized
-processing. In- and output are BAM. Barcode sequences get clipped and `bq` and `bc` tags
-added, just like bam2bam. Barcodes do not necessarily have to be in the correct
-direction. Output can be split by barcode.
+*Lima* offers following features:
+ * Demultiplex PacBio reads with insane speed, vectorized alignment and parallelized processing
+ * Both, raw subreads and ccs reads can be processed
+ * In- and output are BAM
+ * Barcode sequences get clipped and `bq` and `bc` tags added, just like bam2bam
+ * Barcodes do not necessarily have to be in the correct direction
+ * Output can be split by barcode
+ * No scraps.bam needed
 
 ## Execution
-Run on CCS data:
-
-    lima_ccs movie.ccs.bam barcodes.fasta
-
 Run on raw subread data:
 
-    lima_raw movie.subreads.bam barcodes.fasta
+    lima movie.subreads.bam barcodes.fasta
+
+Run on CCS data:
+
+    lima --css movie.ccs.bam barcodes.fasta
 
 ## Workflow
 
 <img src="img/barcode.png" width="1000px">
 
-### CCS
-*lima_ccs* processes each CCS input sequence individually.
-For each CCS input sequence, barcodes are called and clipped separately to produce
-the output sequence. For each target barcode, left and right, each of the
-provided sequences is aligned as given and as reverse-complement and the best
-scoring sequence is chosen. This procedure might be called *asymmetric*.
+*Lima* processes input reads grouped by ZMW.
+Each target barcode region, left and right, is processed individually.
+For a particular target barcode region, every barcode sequence gets
+aligned as given and as reverse-complement and per barcode scores are summed;
+the best scoring barcode is chosen using the score sums.
+
+This procedure corresponds to the *asymmetric* library prep.
 If only identical barcode pairs are of interest, *symmetric*, please use
 `--symmetric`.
 
-### RAW
-*lima_raw* processes RAW input sequences per ZMW.
-Barcodes are called for each individual subread, scores are summed per barcode,
-and barcode for the ZMW gets chosen using the score sum.
-
 ## Output
 Both *lima* tools generate four output files, all starting with the BAM input
-file name prefix. Possible differences are explained by example.
+file name prefix.
 
 ### BAM
 The first file `prefix.demux.bam` contains clipped records, annotated with
@@ -65,19 +66,8 @@ barcode tags, that passed filters and respects `--symmetric`.
 
 ### Report
 Second file is `prefix.demux.report`, a tsv file about each read, unfiltered.
-
-#### CCS Example
-
-    $ head prefix.demux.report | column -t
-    ZMW                                BcLeft  BcRight  ScoreLeft  ScoreRight  MeanScore  ClipLeft  ClipRight
-    m54011_170105_093642/30867881/ccs  0       50       84         59          71         14        2223
-    m54011_170105_093642/30867884/ccs  36      14       78         100         89         15        2222
-    m54011_170105_093642/30867886/ccs  3       36       47         100         73         15        2214
-    m54011_170105_093642/30867887/ccs  10      32       100        100         100        15        2217
-
-#### RAW Example
 An individual score with `-1` indicates that a leading or trailing adapter is
-missing.
+missing. This is irrelevant for CCS reads.
 
     $ head prefix.demux.report | column -t
     ZMW      IndexLeft  IndexRight  MeanScoreLeft  MeanScoreRight  MeanScore  ClipsLeft    ClipsRight           ScoresLeft    ScoresRight
@@ -86,21 +76,8 @@ missing.
     4522785  3          3           86             87              87         0,15,15,14  2016,2176,2198,2119  -1,100,76,82  73,100,89,-1
 
 ### Summary
-Third file is `prefix.demux.summary`, showing how many reads have been filtered
-and how many are *symmetric*/*asymmetric*.
-
-#### CCS Example
-
-    ZMWs above length and score threshold : 996
-    ZMWs below length and score threshold : 0
-    ZMWs below length threshold           : 0
-    ZMWs below score threshold            : 1
-
-    ZMWs symmetric                        : 927
-    ZMWs asymmetric                       : 69
-
-#### RAW Example
-Additional two rows show the number of subreads w.r.t. minimal length filter:
+Third file is `prefix.demux.summary`, shows how many ZMWs have been filtered,
+how ZMWs many are *symmetric*/*asymmetric*, and how many reads have been filtered.
 
     ZMWs above length and score threshold : 1127
     ZMWs below length and score threshold : 0
@@ -110,8 +87,8 @@ Additional two rows show the number of subreads w.r.t. minimal length filter:
     ZMWs symmetric                        : 1013
     ZMWs asymmetric                       : 114
 
-    Subreads above length                 : 7596
-    Subreads below length                 : 9
+    Reads above length                    : 7596
+    Reads below length                    : 9
 
 ### Counts
 Fourth file is `prefix.demux.counts`, a tsv file, shows the counts for each
@@ -131,9 +108,9 @@ The barcode score is normalized between 0 and 100, whereas 0 is no hit and
 barcode scores.
 
 ## Defaults
- - CCS reads with length below 50 bp after demultiplexing are omitted.
-   Adjusted with `--min-length`. No length filter for raw subreads.
- - Reads with barcode score below 50 are omitted.
+ - Reads with length below 50 bp after demultiplexing are omitted.
+   Adjusted with `--min-length`.
+ - ZMWs with barcode score below 50 are omitted.
    Adjust with `--min-score`
  - For each barcode, we align it to a subsequence of the begin and end of
    the CCS read. The length of the subsequence is `barcode_length * multiplier`,
@@ -184,8 +161,10 @@ This mode consumes more memory, as output cannot be streamed.
 Sequences flanked by *asymmetric* barcodes are still reported, but are not
 written to BAM. By not enforcing only *symmetric* barcode pairs, *lima* gains
 higher PPV, as your sample might be contaminated and contains unwanted
-barcode pairs; instead of enforcing one *symmetric* bucket, *lima* rather
-filters such sequences. This is a good indicator for badly prepared libraries.
+barcode pairs; instead of enforcing one *symmetric* pair, *lima* rather
+filters such sequences. Every *symmetric* library contains few *asymmetric*
+templates. If many *asymmetric* templates are called, your library preparation
+might be bad.
 
 ### Why are symmetric hits reported in the default asymmetric mode?
 Even if your sample is labeled *asymmetric*, *symmetric* hits are simply
@@ -194,3 +173,14 @@ sequences flanked by the same barcode.
 ### How do barcode indices correspond to the input sequences?
 Input barcode sequences are tagged with an incrementing counter. The first
 sequence is barcode `0` and the last barcode `numBarcodes - 1`.
+
+### I used the tailed library prep, what options to choose?
+Use `--symmetric`.
+
+### What is different to bam2bam?
+ * CCS read support
+ * Barcodes of every adapter gets scored for raw subreads
+ * Do not enforce symmetric barcode pairing, which increases PPV
+ * Open-source and can be compiled on your local Mac or Linux machine
+ * Faster
+ * Nice reports for QC

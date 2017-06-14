@@ -76,6 +76,5 @@ if (UHU_build_bin)
         set_target_properties(uhutools PROPERTIES LINK_FLAGS ${LOCAL_LINK_FLAGS})
     endif()
 
-    create_exe(lima_ccs)
-    create_exe(lima_raw)
+    create_exe(lima)
 endif()

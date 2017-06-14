@@ -44,7 +44,6 @@
 
 namespace PacBio {
 namespace Lima {
-namespace RAW {
 struct LimaWorkflow
 {
     static BarcodeHitPair Tag(const std::vector<BAM::BamRecord> records,
@@ -60,5 +59,4 @@ struct LimaWorkflow
                                     std::vector<Barcode>* barcodes);
 };
 }
-}
-}
+}  // ::PacBio::Lima

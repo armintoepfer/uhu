@@ -37,11 +37,10 @@
 
 #include <pacbio/data/PlainOption.h>
 
-#include <pacbio/lima/LimaCcsSettings.h>
+#include <pacbio/lima/LimaSettings.h>
 
 namespace PacBio {
 namespace Lima {
-namespace CCS {
 namespace OptionNames {
 using PlainOption = Data::PlainOption;
 // clang-format off
@@ -90,7 +89,7 @@ const PlainOption MatchScore{
     {"A", "match-score"},
     "MatchScore",
     "Score for a sequence match.",
-    CLI::Option::IntType(2)
+    CLI::Option::IntType(4)
 };
 
 const PlainOption MismatchPenalty{
@@ -98,7 +97,7 @@ const PlainOption MismatchPenalty{
     {"B", "mismatch-penalty"},
     "MismatchPenalty",
     "Penalty for a mismatch.",
-    CLI::Option::IntType(2)
+    CLI::Option::IntType(13)
 };
 
 const PlainOption GapOpenPenalty{
@@ -106,7 +105,7 @@ const PlainOption GapOpenPenalty{
     {"O", "gap-open-penalty"},
     "GapOpenPenalty",
     "Gap open penalties for deletions and insertions.",
-    CLI::Option::IntType(3)
+    CLI::Option::IntType(7)
 };
 
 const PlainOption GapExtPenalty{
@@ -114,7 +113,7 @@ const PlainOption GapExtPenalty{
     {"E", "gap-ext-penalty"},
     "GapExtPenalty",
     "Gap extension penalties for deletions and insertions.",
-    CLI::Option::IntType(1)
+    CLI::Option::IntType(7)
 };
 
 const PlainOption NoBam{
@@ -140,6 +139,14 @@ const PlainOption SplitBam{
     "Split BAM output by barcode pair.",
     CLI::Option::BoolType()
 };
+
+const PlainOption CCS{
+    "CCS",
+    {"ccs"},
+    "CCS",
+    "CCS mode, use optimal alignment options -A 4 -B 1 -O 3 -E 1.",
+    CLI::Option::BoolType()
+};
 // clang-format on
 }  // namespace OptionNames
 
@@ -150,16 +157,32 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     , KeepSymmetric(options[OptionNames::KeepSymmetric])
     , MinScore(options[OptionNames::MinScore])
     , MinLength(options[OptionNames::MinLength])
-    , MatchScore(options[OptionNames::MatchScore])
-    , MismatchPenalty(options[OptionNames::MismatchPenalty])
-    , GapOpenPenalty(options[OptionNames::GapOpenPenalty])
-    , GapExtPenalty(options[OptionNames::GapExtPenalty])
     , NoBam(options[OptionNames::NoBam])
     , NoReports(options[OptionNames::NoReports])
     , SplitBam(options[OptionNames::SplitBam])
 {
     if (SplitBam && NoBam)
         throw std::runtime_error("Options --split-bam and --no-bam are mutually exclusive!");
+
+    if (options[OptionNames::SplitBam]) {
+        MatchScore = 4;
+        MismatchPenalty = 1;
+        GapOpenPenalty = 3;
+        GapExtPenalty = 1;
+    }
+
+    if (static_cast<int>(options[OptionNames::MatchScore]) !=
+        static_cast<int>(OptionNames::MatchScore.defaultValue))
+        MatchScore = options[OptionNames::MatchScore];
+    if (static_cast<int>(options[OptionNames::MismatchPenalty]) !=
+        static_cast<int>(OptionNames::MismatchPenalty.defaultValue))
+        MismatchPenalty = options[OptionNames::MismatchPenalty];
+    if (static_cast<int>(options[OptionNames::GapOpenPenalty]) !=
+        static_cast<int>(OptionNames::GapOpenPenalty.defaultValue))
+        GapOpenPenalty = options[OptionNames::GapOpenPenalty];
+    if (static_cast<int>(options[OptionNames::GapExtPenalty]) !=
+        static_cast<int>(OptionNames::GapExtPenalty.defaultValue))
+        GapExtPenalty = options[OptionNames::GapExtPenalty];
 }
 
 PacBio::CLI::Interface LimaSettings::CreateCLI()
@@ -167,8 +190,8 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     using Option = PacBio::CLI::Option;
     using Task = PacBio::CLI::ToolContract::Task;
 
-    PacBio::CLI::Interface i{"lima_ccs",
-                             "Lima CCS, Demultiplex Barcoded CCS Data and Clip Barcodes ", "0.7.0"};
+    PacBio::CLI::Interface i{"lima", "Lima, Demultiplex Barcoded PacBio Data and Clip Barcodes ",
+                             "0.8.0"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
@@ -183,12 +206,13 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     {
         OptionNames::KeepSymmetric,
         OptionNames::WindowSizeMult,
-        OptionNames::MinScore,
-        OptionNames::MinLength
+        OptionNames::MinLength,
+        OptionNames::MinScore
     });
 
     i.AddGroup("Aligner Configuration",
     {
+        OptionNames::CCS,
         OptionNames::MatchScore,
         OptionNames::MismatchPenalty,
         OptionNames::GapOpenPenalty,
@@ -206,5 +230,4 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     return i;
 }
 }
-}
-}  // ::PacBio::Lima::CCS
+}  // ::PacBio::Lima

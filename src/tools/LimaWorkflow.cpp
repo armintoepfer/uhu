@@ -63,18 +63,37 @@
 
 #include <threadpool/ThreadPool.h>
 
-#include <pacbio/lima/LimaRawSettings.h>
+#include <pacbio/lima/LimaSettings.h>
 
-#include <pacbio/lima/LimaRawWorkflow.h>
+#include <pacbio/lima/LimaWorkflow.h>
 
 namespace PacBio {
 namespace Lima {
-namespace RAW {
 namespace {
 const int leftAdapterFlag = static_cast<int>(BAM::LocalContextFlags::ADAPTER_BEFORE);
 const int rightAdapterFlag = static_cast<int>(BAM::LocalContextFlags::ADAPTER_AFTER);
 }
 // ## Lima #
+
+struct BarcodeInfo
+{
+    BarcodeInfo(size_t reserveSize)
+    {
+        Scores.reserve(reserveSize);
+        Clips.reserve(reserveSize);
+    }
+
+    double ScoreSum = 0;
+    std::vector<int> Scores;
+    std::vector<int> Clips;
+
+    void Add(int score, int clip)
+    {
+        if (score > 0) ScoreSum += score;
+        Scores.push_back(score);
+        Clips.push_back(clip);
+    }
+};
 BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                                  const std::vector<Barcode>& queries, const LimaSettings& settings)
 {
@@ -84,32 +103,27 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
     int barcodeLengthWSpacing = barcodeLength * settings.WindowSizeMult;
 
     size_t numBarcodes = queries.size();
+    size_t numRecords = records.size();
 
     int counterLeft = 0;
-    std::vector<double> scoresLeft(numBarcodes, 0);
-    std::vector<double> scoresLeftRC(numBarcodes, 0);
-    std::vector<std::vector<int>> scoresLeftV(numBarcodes);
-    std::vector<std::vector<int>> scoresLeftRCV(numBarcodes);
-    std::vector<std::vector<int>> clipsLeftV(numBarcodes);
-    std::vector<std::vector<int>> clipsLeftRCV(numBarcodes);
+
+    std::vector<BarcodeInfo> left(numBarcodes, numRecords);
+    std::vector<BarcodeInfo> leftRC(numBarcodes, numRecords);
 
     int counterRight = 0;
-    std::vector<double> scoresRight(numBarcodes, 0);
-    std::vector<double> scoresRightRC(numBarcodes, 0);
-    std::vector<std::vector<int>> scoresRightV(numBarcodes);
-    std::vector<std::vector<int>> scoresRightRCV(numBarcodes);
-    std::vector<std::vector<int>> clipsRightV(numBarcodes);
-    std::vector<std::vector<int>> clipsRightRCV(numBarcodes);
+    std::vector<BarcodeInfo> right(numBarcodes, numRecords);
+    std::vector<BarcodeInfo> rightRC(numBarcodes, numRecords);
 
     auto NormalizeScore = [&](const double& score) {
         return std::round(100.0 * score) / (barcodeLength * settings.MatchScore);
     };
 
-    int recordCounter = 0;
     for (const auto& r : records) {
-        const int cx = r.LocalContextFlags();
-        bool hasAdapterLeft = cx & leftAdapterFlag;
-        bool hasAdapterRight = cx & rightAdapterFlag;
+        const bool hasCX = r.HasLocalContextFlags();
+        const bool hasAdapterLeft =
+            ((hasCX && (r.LocalContextFlags() & leftAdapterFlag)) || !hasCX);
+        const bool hasAdapterRight =
+            ((hasCX && (r.LocalContextFlags() & rightAdapterFlag)) || !hasCX);
 
         const auto target = r.Sequence();
         const int targetLength = target.size();
@@ -124,49 +138,38 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                                              std::min(targetLength, barcodeLengthWSpacing));
             for (size_t i = 0; i < queries.size(); ++i) {
                 const auto align = AlignUtils::AlignForward(alignerLeft, queries[i]);
-                scoresLeft[i] += align.sw_score;
-                scoresLeftV[i].push_back(NormalizeScore(align.sw_score));
-                clipsLeftV[i].push_back(align.ref_end);
+                left[i].Add(NormalizeScore(align.sw_score), align.ref_end);
 
                 const auto alignRC = AlignUtils::AlignRC(alignerLeft, queries[i]);
-                scoresLeftRC[i] += alignRC.sw_score;
-                scoresLeftRCV[i].push_back(NormalizeScore(alignRC.sw_score));
-                clipsLeftRCV[i].push_back(alignRC.ref_end);
+                leftRC[i].Add(NormalizeScore(alignRC.sw_score), alignRC.ref_end);
             }
             ++counterLeft;
         } else {
             for (size_t i = 0; i < queries.size(); ++i) {
-                scoresLeftV[i].push_back(-1);
-                scoresLeftRCV[i].push_back(-1);
-                clipsLeftV[i].push_back(0);
-                clipsLeftRCV[i].push_back(0);
+                left[i].Add(-1, 0);
+                leftRC[i].Add(-1, 0);
             }
         }
+
         if (hasAdapterRight) {
             int alignerRightBegin = std::max(targetLength - barcodeLengthWSpacing, 0);
             alignerRight.SetReferenceSequence(target.c_str() + alignerRightBegin,
                                               targetLength - alignerRightBegin);
             for (size_t i = 0; i < queries.size(); ++i) {
                 const auto align = AlignUtils::AlignForward(alignerRight, queries[i]);
-                scoresRight[i] += align.sw_score;
-                scoresRightV[i].push_back(NormalizeScore(align.sw_score));
-                clipsRightV[i].push_back(alignerRightBegin + align.ref_begin);
+                right[i].Add(NormalizeScore(align.sw_score), alignerRightBegin + align.ref_begin);
 
                 const auto alignRC = AlignUtils::AlignRC(alignerRight, queries[i]);
-                scoresRightRC[i] += alignRC.sw_score;
-                scoresRightRCV[i].push_back(NormalizeScore(alignRC.sw_score));
-                clipsRightRCV[i].push_back(alignerRightBegin + alignRC.ref_begin);
+                rightRC[i].Add(NormalizeScore(alignRC.sw_score),
+                               alignerRightBegin + alignRC.ref_begin);
             }
             ++counterRight;
         } else {
             for (size_t i = 0; i < queries.size(); ++i) {
-                scoresRightV[i].push_back(-1);
-                scoresRightRCV[i].push_back(-1);
-                clipsRightV[i].push_back(targetLength);
-                clipsRightRCV[i].push_back(targetLength);
+                right[i].Add(-1, targetLength);
+                rightRC[i].Add(-1, targetLength);
             }
         }
-        ++recordCounter;
     }
 
     auto GetBestIndex = [&](std::vector<double>& v) {
@@ -174,11 +177,20 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
         std::iota(idx.begin(), idx.end(), 0);
         std::sort(idx.begin(), idx.end(), [&v](size_t i1, size_t i2) { return v[i1] > v[i2]; });
 
-        return std::make_pair(idx.front(), NormalizeScore(v.at(idx.front())));
+        return std::make_pair(idx.front(), v.at(idx.front()));
     };
 
-    auto Compute = [&](std::vector<double>& scores, std::vector<double>& scoresRC, bool left) {
+    auto Compute = [&](const std::vector<BarcodeInfo>& fwd, const std::vector<BarcodeInfo>& rc,
+                       int denominator) {
         BarcodeHit bc;
+
+        std::vector<double> scores(numBarcodes, 0);
+        std::vector<double> scoresRC(numBarcodes, 0);
+        if (denominator == 0) denominator = 1;
+        for (size_t i = 0; i < numBarcodes; ++i) {
+            scores[i] = fwd[i].ScoreSum / denominator;
+            scoresRC[i] = rc[i].ScoreSum / denominator;
+        }
 
         int idxFwd;
         int scoreFwd;
@@ -188,58 +200,35 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
         int idxRev;
         std::tie(idxRev, scoreRev) = GetBestIndex(scoresRC);
 
-        int counter = 0;
         if (scoreFwd > scoreRev) {
             bc.Score = scoreFwd;
             bc.Idx = idxFwd;
-
-            if (left) {
-                bc.Clips = clipsLeftV.at(bc.Idx);
-                bc.Scores = scoresLeftV.at(bc.Idx);
-            } else {
-                bc.Clips = clipsRightV.at(bc.Idx);
-                bc.Scores = scoresRightV.at(bc.Idx);
-            }
+            bc.Clips = fwd[bc.Idx].Clips;
+            bc.Scores = fwd[bc.Idx].Scores;
         } else {
             bc.Score = scoreRev;
             bc.Idx = idxRev;
-
-            if (left) {
-                bc.Clips = clipsLeftRCV.at(bc.Idx);
-                bc.Scores = scoresLeftRCV.at(bc.Idx);
-            } else {
-                bc.Clips = clipsRightRCV.at(bc.Idx);
-                bc.Scores = scoresRightRCV.at(bc.Idx);
-            }
+            bc.Clips = rc[bc.Idx].Clips;
+            bc.Scores = rc[bc.Idx].Scores;
         }
 
         return bc;
     };
 
-    BarcodeHit left;
-    BarcodeHit right;
+    BarcodeHit leftBH;
+    BarcodeHit rightBH;
 
-    if (counterLeft > 0) {
-        for (size_t i = 0; i < numBarcodes; ++i) {
-            scoresLeft[i] /= counterLeft;
-            scoresLeftRC[i] /= counterLeft;
-        }
-        left = Compute(scoresLeft, scoresLeftRC, true);
-    } else {
-        left.Clips = clipsLeftV.at(0);
-    }
+    if (counterLeft > 0)
+        leftBH = Compute(left, leftRC, counterLeft);
+    else
+        leftBH.Clips = left[0].Clips;
 
-    if (counterRight > 0) {
-        for (size_t i = 0; i < numBarcodes; ++i) {
-            scoresRight[i] /= counterRight;
-            scoresRightRC[i] /= counterRight;
-        }
-        right = Compute(scoresRight, scoresRightRC, false);
-    } else {
-        right.Clips = clipsRightV.at(0);
-    }
+    if (counterRight > 0)
+        rightBH = Compute(right, rightRC, counterRight);
+    else
+        rightBH.Clips = right[0].Clips;
 
-    return BarcodeHitPair(std::move(left), std::move(right));
+    return BarcodeHitPair(std::move(leftBH), std::move(rightBH));
 }
 
 void LimaWorkflow::Process(const LimaSettings& settings,
@@ -285,8 +274,11 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                         int clipRight = bh.Right.Clips.at(i);
                         if (clipRight - clipLeft > settings.MinLength) {
                             auto r = records[i];
-                            r.Clip(BAM::ClipType::CLIP_TO_QUERY, r.QueryStart() + clipLeft,
-                                   r.QueryStart() + clipRight);
+                            if (r.HasQueryStart()) {
+                                clipLeft += r.QueryStart();
+                                clipRight += r.QueryStart();
+                            }
+                            r.Clip(BAM::ClipType::CLIP_TO_QUERY, clipLeft, clipRight);
                             r.Barcodes(std::make_pair(bh.Left.Idx, bh.Right.Idx));
                             r.BarcodeQuality(bh.MeanScore);
                             recordOut.emplace_back(std::move(r));
@@ -460,5 +452,4 @@ void LimaWorkflow::ParsePositionalArgs(const std::vector<std::string>& args,
     }
 }
 }
-}
-}
+}  // ::PacBio::Lima
