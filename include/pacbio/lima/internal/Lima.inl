@@ -48,5 +48,12 @@ inline std::ostream& operator<<(std::ostream& stream, const Summary& s)
     stream << std::string(s);
     return stream;
 }
+
+inline void ScoreClip::Add(int score, int clip)
+{
+    if (score > 0) ScoreSum += score;
+    Scores.push_back(score);
+    Clips.push_back(clip);
+}
 }
 }

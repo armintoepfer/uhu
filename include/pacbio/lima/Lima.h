@@ -82,6 +82,21 @@ struct Barcode
     std::string Bases;
 };
 
+struct ScoreClip
+{
+    ScoreClip(size_t reserveSize)
+    {
+        Scores.reserve(reserveSize);
+        Clips.reserve(reserveSize);
+    }
+
+    double ScoreSum = 0;
+    std::vector<int> Scores;
+    std::vector<int> Clips;
+
+    void Add(int score, int clip);
+};
+
 struct BarcodeHit
 {
     BarcodeHit() = default;
