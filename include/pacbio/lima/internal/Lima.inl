@@ -49,11 +49,18 @@ inline std::ostream& operator<<(std::ostream& stream, const Summary& s)
     return stream;
 }
 
-inline void ScoreClip::Add(int score, int clip)
+inline void BarcodeHit::Add(int score, int clip)
 {
     if (score > 0) ScoreSum += score;
     Scores.push_back(score);
     Clips.push_back(clip);
+}
+
+inline void BarcodeHit::Normalize(int denominator)
+{
+    double tmp = ScoreSum / denominator;
+    if (tmp > 100) throw std::runtime_error("Problem with score normalization");
+    Score = tmp;
 }
 }
 }

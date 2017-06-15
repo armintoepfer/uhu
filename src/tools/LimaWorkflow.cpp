@@ -61,6 +61,7 @@
 #include <pbbam/PbiFilter.h>
 #include <pbbam/PbiFilterQuery.h>
 
+#include <pacbio/parallel/WorkQueue.h>
 #include <threadpool/ThreadPool.h>
 
 #include <pacbio/lima/LimaSettings.h>
@@ -86,12 +87,19 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
     size_t numRecords = records.size();
 
     int counterLeft = 0;
-    std::vector<ScoreClip> left(numBarcodes, numRecords);
-    std::vector<ScoreClip> leftRC(numBarcodes, numRecords);
+    std::vector<BarcodeHit> left(numBarcodes, numRecords);
+    std::vector<BarcodeHit> leftRC(numBarcodes, numRecords);
 
     int counterRight = 0;
-    std::vector<ScoreClip> right(numBarcodes, numRecords);
-    std::vector<ScoreClip> rightRC(numBarcodes, numRecords);
+    std::vector<BarcodeHit> right(numBarcodes, numRecords);
+    std::vector<BarcodeHit> rightRC(numBarcodes, numRecords);
+
+    for (size_t i = 0; i < numBarcodes; ++i) {
+        left[i].Idx = i;
+        leftRC[i].Idx = i;
+        right[i].Idx = i;
+        rightRC[i].Idx = i;
+    }
 
     auto NormalizeScore = [&](const double& score) {
         return std::round(100.0 * score) / (barcodeLength * settings.MatchScore);
@@ -100,9 +108,10 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
     for (const auto& r : records) {
         // Activate if there is no context flag or if the left/right adapter is present
         const bool hasCX = r.HasLocalContextFlags();
-        const auto cx = r.LocalContextFlags();
-        const bool hasAdapterLeft = ((hasCX && (cx & leftAdapterFlag)) || !hasCX);
-        const bool hasAdapterRight = ((hasCX && (cx & rightAdapterFlag)) || !hasCX);
+        const bool hasAdapterLeft =
+            ((hasCX && (r.LocalContextFlags() & leftAdapterFlag)) || !hasCX);
+        const bool hasAdapterRight =
+            ((hasCX && (r.LocalContextFlags() & rightAdapterFlag)) || !hasCX);
 
         const auto target = r.Sequence();
         const int targetLength = target.size();
@@ -154,45 +163,22 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
         }
     }
 
-    auto Compute = [&](const std::vector<ScoreClip>& fwd, const std::vector<ScoreClip>& rc,
-                       int denominator) {
+    auto Compute = [&](std::vector<BarcodeHit>& fwd, std::vector<BarcodeHit>& rc, int denominator) {
         BarcodeHit bc;
 
-        std::vector<double> scores(numBarcodes, 0);
-        std::vector<double> scoresRC(numBarcodes, 0);
         if (denominator == 0) denominator = 1;
         for (size_t i = 0; i < numBarcodes; ++i) {
-            scores[i] = fwd[i].ScoreSum / denominator;
-            scoresRC[i] = rc[i].ScoreSum / denominator;
+            fwd[i].Normalize(denominator);
+            rc[i].Normalize(denominator);
         }
+        auto cmp = [](const BarcodeHit& l, const BarcodeHit& r) { return l.Score < r.Score; };
+        auto bestFwd = std::max_element(fwd.begin(), fwd.end(), cmp);
+        auto bestRC = std::max_element(rc.begin(), rc.end(), cmp);
 
-        auto GetBestIndex = [&](std::vector<double>& v) {
-            std::vector<size_t> idx(v.size());
-            std::iota(idx.begin(), idx.end(), 0);
-            std::sort(idx.begin(), idx.end(), [&v](size_t i1, size_t i2) { return v[i1] > v[i2]; });
-
-            return std::make_pair(idx.front(), v.at(idx.front()));
-        };
-
-        int idxFwd;
-        int scoreFwd;
-        std::tie(idxFwd, scoreFwd) = GetBestIndex(scores);
-
-        int scoreRev;
-        int idxRev;
-        std::tie(idxRev, scoreRev) = GetBestIndex(scoresRC);
-
-        if (scoreFwd > scoreRev) {
-            bc.Score = scoreFwd;
-            bc.Idx = idxFwd;
-            bc.Clips = fwd[bc.Idx].Clips;
-            bc.Scores = fwd[bc.Idx].Scores;
-        } else {
-            bc.Score = scoreRev;
-            bc.Idx = idxRev;
-            bc.Clips = rc[bc.Idx].Clips;
-            bc.Scores = rc[bc.Idx].Scores;
-        }
+        if (bestFwd->ScoreSum > bestRC->ScoreSum)
+            bc = *bestFwd;
+        else
+            bc = *bestRC;
 
         return bc;
     };
@@ -203,18 +189,19 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
     if (counterLeft > 0)
         leftBH = Compute(left, leftRC, counterLeft);
     else
-        leftBH.Clips = left[0].Clips;
+        leftBH.Clips.resize(numRecords);
 
     if (counterRight > 0)
         rightBH = Compute(right, rightRC, counterRight);
     else
-        rightBH.Clips = right[0].Clips;
+        rightBH.Clips.resize(numRecords);
 
     return BarcodeHitPair(std::move(leftBH), std::move(rightBH));
 }
 
-struct FutureResult
+struct TaskResult
 {
+    TaskResult(BarcodeHitPair&& bhp) : BHP(std::forward<BarcodeHitPair>(bhp)) {}
     std::vector<BAM::BamRecord> Records;
     std::string Report;
     BarcodeHitPair BHP;
@@ -233,20 +220,19 @@ void LimaWorkflow::Process(const LimaSettings& settings,
     for (const auto& datasetPath : datasetPaths) {
         // Get a query to the underlying BAM files, respecting filters
         auto query = AdvancedFileUtils::BamQuery(datasetPath);
-        std::vector<Uhu::Threadpool::ThreadPool::TaskFuture<FutureResult>> v;
+        std::vector<Uhu::Threadpool::ThreadPool::TaskFuture<TaskResult>> v;
         Summary summary;
         std::atomic_int SubreadBelowMinLength{0};
         std::atomic_int SubreadAboveMinLength{0};
         auto Submit = [&](const std::vector<BAM::BamRecord>& records) {
-            FutureResult result;
-
-            result.BHP = LimaWorkflow::Tag(records, barcodes, settings);
-            auto& bhp = result.BHP;
+            TaskResult result{LimaWorkflow::Tag(records, barcodes, settings)};
+            const auto& bhp = result.BHP;
 
             bool aboveMinScore = bhp.MeanScore >= settings.MinScore;
             bool aboveMinLength = false;
 
-            if (bhp.Right.Clips.size() != bhp.Left.Clips.size())
+            if (bhp.Right.Clips.size() != bhp.Left.Clips.size() ||
+                bhp.Right.Clips.size() != records.size())
                 throw std::runtime_error("Internal error, clips sizes not equal! " +
                                          records.at(0).FullName() + " " +
                                          std::to_string(bhp.Left.Clips.size()) + " " +
@@ -260,7 +246,8 @@ void LimaWorkflow::Process(const LimaSettings& settings,
             result.PassingFilters = aboveMinScore && aboveMinLength;
 
             if (!settings.NoReports)
-                result.report = std::to_string(records.at(0).HoleNumber()) + "\t" + std::string(bh);
+                result.Report =
+                    std::to_string(records.at(0).HoleNumber()) + "\t" + std::string(bhp);
 
             if (aboveMinScore && aboveMinLength) {
                 if (!settings.NoBam) {
@@ -276,7 +263,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                             r.Clip(BAM::ClipType::CLIP_TO_QUERY, clipLeft, clipRight);
                             r.Barcodes(std::make_pair(bhp.Left.Idx, bhp.Right.Idx));
                             r.BarcodeQuality(bhp.MeanScore);
-                            result.records.emplace_back(std::move(r));
+                            result.Records.emplace_back(std::move(r));
                             ++SubreadAboveMinLength;
                         } else {
                             ++SubreadBelowMinLength;
@@ -349,7 +336,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                     if (!settings.NoReports) ++barcodePairCounts[leftIdx][rightIdx];
                 }
             }
-            if (!settings.NoReports) report << std::get<1>(p) << std::endl;
+            if (!settings.NoReports) report << p.Report << std::endl;
         }
 
         if (settings.SplitBam) {

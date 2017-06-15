@@ -79,43 +79,35 @@ BarcodeHitPair::operator std::string() const
     out << static_cast<int>(Left.Idx) << "\t" << static_cast<int>(Right.Idx) << "\t"
         << static_cast<int>(Left.Score) << "\t" << static_cast<int>(Right.Score) << "\t"
         << static_cast<int>(MeanScore) << "\t";
-    if (!Left.Clips.empty() && !Right.Clips.empty()) {
-        if (Left.Clips.empty()) {
-            out << "-";
-        }
-        out << Left.Clips.at(0);
-        for (size_t i = 1; i < Left.Clips.size(); ++i)
-            out << "," << Left.Clips.at(i);
-
-        out << "\t";
-        if (Right.Clips.empty()) {
-            out << "-";
-        }
-        out << Right.Clips.at(0);
-        for (size_t i = 1; i < Right.Clips.size(); ++i)
-            out << "," << Right.Clips.at(i);
-    } else {
-        out << Left.Clip << "\t" << Right.Clip;
+    if (Left.Clips.empty()) {
+        out << "-";
     }
+    out << Left.Clips.at(0);
+    for (size_t i = 1; i < Left.Clips.size(); ++i)
+        out << "," << Left.Clips.at(i);
+
     out << "\t";
-    if (!Left.Scores.empty() && !Right.Scores.empty()) {
-        if (Left.Scores.empty()) {
-            out << "-";
-        }
-        out << static_cast<int>(Left.Scores.at(0));
-        for (size_t i = 1; i < Left.Scores.size(); ++i)
-            out << "," << static_cast<int>(Left.Scores.at(i));
-
-        out << "\t";
-        if (Right.Scores.empty()) {
-            out << "-";
-        }
-        out << static_cast<int>(Right.Scores.at(0));
-        for (size_t i = 1; i < Right.Scores.size(); ++i)
-            out << "," << static_cast<int>(Right.Scores.at(i));
-    } else {
-        out << Left.Clip << "\t" << Right.Clip;
+    if (Right.Clips.empty()) {
+        out << "-";
     }
+    out << Right.Clips.at(0);
+    for (size_t i = 1; i < Right.Clips.size(); ++i)
+        out << "," << Right.Clips.at(i);
+    out << "\t";
+    if (Left.Scores.empty()) {
+        out << "-";
+    }
+    out << static_cast<int>(Left.Scores.at(0));
+    for (size_t i = 1; i < Left.Scores.size(); ++i)
+        out << "," << static_cast<int>(Left.Scores.at(i));
+
+    out << "\t";
+    if (Right.Scores.empty()) {
+        out << "-";
+    }
+    out << static_cast<int>(Right.Scores.at(0));
+    for (size_t i = 1; i < Right.Scores.size(); ++i)
+        out << "," << static_cast<int>(Right.Scores.at(i));
     return out.str();
 }
 

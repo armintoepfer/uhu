@@ -157,6 +157,10 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     , KeepSymmetric(options[OptionNames::KeepSymmetric])
     , MinScore(options[OptionNames::MinScore])
     , MinLength(options[OptionNames::MinLength])
+    , MatchScore(options[OptionNames::MatchScore])
+    , MismatchPenalty(options[OptionNames::MismatchPenalty])
+    , GapOpenPenalty(options[OptionNames::GapOpenPenalty])
+    , GapExtPenalty(options[OptionNames::GapExtPenalty])
     , NoBam(options[OptionNames::NoBam])
     , NoReports(options[OptionNames::NoReports])
     , SplitBam(options[OptionNames::SplitBam])
@@ -164,7 +168,7 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     if (SplitBam && NoBam)
         throw std::runtime_error("Options --split-bam and --no-bam are mutually exclusive!");
 
-    if (options[OptionNames::SplitBam]) {
+    if (options[OptionNames::CCS]) {
         MatchScore = 4;
         MismatchPenalty = 1;
         GapOpenPenalty = 3;

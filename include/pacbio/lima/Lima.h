@@ -82,38 +82,23 @@ struct Barcode
     std::string Bases;
 };
 
-struct ScoreClip
+struct BarcodeHit
 {
-    ScoreClip(size_t reserveSize)
+    BarcodeHit() {}
+    BarcodeHit(size_t reserveSize)
     {
         Scores.reserve(reserveSize);
         Clips.reserve(reserveSize);
     }
 
+    uint16_t Idx = 0;
+    uint8_t Score = 0;
     double ScoreSum = 0;
     std::vector<int> Scores;
     std::vector<int> Clips;
 
     void Add(int score, int clip);
-};
-
-struct BarcodeHit
-{
-    BarcodeHit() = default;
-    BarcodeHit(int idx, int score, int clip) : Idx(idx), Score(score), Clip(clip) {}
-    BarcodeHit(int idx, int score, std::vector<int>& clips) : Idx(idx), Score(score), Clips(clips)
-    {
-    }
-    BarcodeHit(int idx, int score, std::vector<int>& scores, std::vector<int>& clips)
-        : Idx(idx), Score(score), Scores(scores), Clips(clips)
-    {
-    }
-
-    uint16_t Idx = 0;
-    uint8_t Score = 0;
-    int Clip = 0;
-    std::vector<int> Scores;
-    std::vector<int> Clips;
+    void Normalize(int denominator);
 };
 
 struct BarcodeHitPair

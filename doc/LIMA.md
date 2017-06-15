@@ -11,6 +11,7 @@
 * [Workflow](#workflow)
 * [Barcode score](#barcode-score)
 * [Defaults](#defaults)
+* [Missing Features](#missing-features)
 * [FAQ](#faq)
   * [How fast is fast?](#how-fast-is-fast)
   * [Is there a way to show the progress?](#is-there-a-way-to-show-the-progress)
@@ -120,6 +121,11 @@ barcode scores.
     -B,--mismatch-penalty  Penalty for a mismatch.
     -O,--gap-open-penalty  Gap open penalties for deletions and insertions.
     -e,--gap-ext-penalty   Gap extension penalties for deletions and insertions.
+
+## Missing Features
+ * bam2bam-like BAM barcode header line
+ * verification
+ * validation
 
 ## FAQ
 ### How fast is fast?
