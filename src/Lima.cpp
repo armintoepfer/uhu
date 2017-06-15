@@ -81,33 +81,35 @@ BarcodeHitPair::operator std::string() const
         << static_cast<int>(MeanScore) << "\t";
     if (Left.Clips.empty()) {
         out << "-";
+    } else {
+        out << Left.Clips.at(0);
+        for (size_t i = 1; i < Left.Clips.size(); ++i)
+            out << "," << Left.Clips.at(i);
     }
-    out << Left.Clips.at(0);
-    for (size_t i = 1; i < Left.Clips.size(); ++i)
-        out << "," << Left.Clips.at(i);
-
     out << "\t";
     if (Right.Clips.empty()) {
         out << "-";
+    } else {
+        out << Right.Clips.at(0);
+        for (size_t i = 1; i < Right.Clips.size(); ++i)
+            out << "," << Right.Clips.at(i);
+        out << "\t";
     }
-    out << Right.Clips.at(0);
-    for (size_t i = 1; i < Right.Clips.size(); ++i)
-        out << "," << Right.Clips.at(i);
-    out << "\t";
     if (Left.Scores.empty()) {
         out << "-";
+    } else {
+        out << static_cast<int>(Left.Scores.at(0));
+        for (size_t i = 1; i < Left.Scores.size(); ++i)
+            out << "," << static_cast<int>(Left.Scores.at(i));
     }
-    out << static_cast<int>(Left.Scores.at(0));
-    for (size_t i = 1; i < Left.Scores.size(); ++i)
-        out << "," << static_cast<int>(Left.Scores.at(i));
-
     out << "\t";
     if (Right.Scores.empty()) {
         out << "-";
+    } else {
+        out << static_cast<int>(Right.Scores.at(0));
+        for (size_t i = 1; i < Right.Scores.size(); ++i)
+            out << "," << static_cast<int>(Right.Scores.at(i));
     }
-    out << static_cast<int>(Right.Scores.at(0));
-    for (size_t i = 1; i < Right.Scores.size(); ++i)
-        out << "," << static_cast<int>(Right.Scores.at(i));
     return out.str();
 }
 
@@ -211,6 +213,11 @@ Summary::operator std::string() const
     summaryStream << std::endl;
     summaryStream << "ZMWs symmetric                        : " << SymmetricCounts << std::endl;
     summaryStream << "ZMWs asymmetric                       : " << AsymmetricCounts << std::endl;
+    summaryStream << std::endl;
+    summaryStream << "Reads above length                    : " << SubreadAboveMinLength
+                  << std::endl;
+    summaryStream << "Reads below length                    : " << SubreadBelowMinLength
+                  << std::endl;
     return summaryStream.str();
 }
 }

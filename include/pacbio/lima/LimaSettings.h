@@ -59,9 +59,12 @@ struct LimaSettings
     const bool NoBam;
     const bool NoReports;
     const bool SplitBam;
+    size_t NumThreads;
 
     /// Parses the provided CLI::Results and retrieves a defined set of options.
     LimaSettings(const PacBio::CLI::Results& options);
+
+    size_t ThreadCount(int n);
 
     /// Given the description of the tool and its version, create all
     /// necessary CLI::Options for the ccs executable.

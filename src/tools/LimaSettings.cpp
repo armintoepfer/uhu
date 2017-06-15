@@ -147,6 +147,13 @@ const PlainOption CCS{
     "CCS mode, use optimal alignment options -A 4 -B 1 -O 3 -E 1.",
     CLI::Option::BoolType()
 };
+const PlainOption NumThreads{
+    "NumThreads",
+    { "j", "numThreads" },
+    "Number of Threads",
+    "Number of threads to use, 0 means autodetection.",
+    CLI::Option::IntType(0)
+};
 // clang-format on
 }  // namespace OptionNames
 
@@ -187,6 +194,23 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     if (static_cast<int>(options[OptionNames::GapExtPenalty]) !=
         static_cast<int>(OptionNames::GapExtPenalty.defaultValue))
         GapExtPenalty = options[OptionNames::GapExtPenalty];
+
+    int requestedNThreads;
+    if (options.IsFromRTC()) {
+        requestedNThreads = options.NumProcessors();
+    } else {
+        requestedNThreads = options[OptionNames::NumThreads];
+    }
+    NumThreads = ThreadCount(requestedNThreads);
+}
+
+size_t LimaSettings::ThreadCount(int n)
+{
+    const int m = std::thread::hardware_concurrency();
+
+    if (n < 1) return std::max(1, m + n);
+
+    return std::min(m, n);
 }
 
 PacBio::CLI::Interface LimaSettings::CreateCLI()
@@ -195,7 +219,7 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     using Task = PacBio::CLI::ToolContract::Task;
 
     PacBio::CLI::Interface i{"lima", "Lima, Demultiplex Barcoded PacBio Data and Clip Barcodes ",
-                             "0.8.0"};
+                             "0.9.0"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
@@ -228,6 +252,9 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
         OptionNames::NoBam,
         OptionNames::SplitBam,
         OptionNames::NoReports
+    });
+    i.AddOptions({
+        OptionNames::NumThreads
     });
     // clang-format on
 

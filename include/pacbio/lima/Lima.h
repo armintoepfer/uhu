@@ -103,7 +103,7 @@ struct BarcodeHit
 
 struct BarcodeHitPair
 {
-    BarcodeHitPair() = default;
+    BarcodeHitPair() = delete;
     BarcodeHitPair(const BarcodeHit& left, const BarcodeHit& right)
         : Left(left), Right(right), MeanScore((Left.Score + Right.Score) / 2)
     {
@@ -130,6 +130,8 @@ struct Summary
     std::atomic_int AboveThresholds{0};
     int SymmetricCounts = 0;
     int AsymmetricCounts = 0;
+    std::atomic_int SubreadBelowMinLength{0};
+    std::atomic_int SubreadAboveMinLength{0};
 
     operator std::string() const;
 };

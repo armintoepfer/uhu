@@ -208,23 +208,101 @@ struct TaskResult
     bool PassingFilters;
 };
 
+void WorkerThread(PacBio::Parallel::WorkQueue<TaskResult>& queue,
+                  std::unique_ptr<BAM::BamWriter>& writer, const LimaSettings& settings,
+                  const std::string& prefix, Summary& summary, BAM::BamHeader& header)
+{
+    std::map<uint8_t, std::map<uint8_t, int>> barcodePairCounts;
+
+    std::ofstream report;
+    if (!settings.NoReports) {
+        report.open(prefix + ".demux.report");
+        report << "ZMW\tIndexLeft\tIndexRight\tMeanScoreLeft\tMeanScoreRight\tMeanScore\tClipsL"
+                  "eft\tClipsRight\tScoresLeft\tScoresRight"
+               << std::endl;
+    }
+
+    std::map<std::pair<uint8_t, uint8_t>, std::vector<BAM::BamRecord>> barcodeToRecords;
+
+    auto LambdaWorker = [&](TaskResult&& p) {
+        if (p.PassingFilters) {
+            const auto leftIdx = p.BHP.Left.Idx;
+            const auto rightIdx = p.BHP.Right.Idx;
+            if (leftIdx == rightIdx)
+                ++summary.SymmetricCounts;
+            else
+                ++summary.AsymmetricCounts;
+
+            if ((settings.KeepSymmetric && leftIdx == rightIdx) || !settings.KeepSymmetric) {
+                if (settings.SplitBam)
+                    for (auto&& r : p.Records)
+                        barcodeToRecords[std::make_pair(leftIdx, rightIdx)].emplace_back(
+                            std::move(r));
+                else if (!settings.NoBam)
+                    for (auto& r : p.Records) {
+                        writer->Write(r);
+                    }
+                if (!settings.NoReports) ++barcodePairCounts[leftIdx][rightIdx];
+            }
+        }
+        if (!settings.NoReports) report << p.Report << std::endl;
+    };
+
+    while (queue.ConsumeWith(LambdaWorker)) {
+    }
+
+    if (settings.SplitBam) {
+        for (const auto& bc_records : barcodeToRecords) {
+            std::stringstream fileName;
+            fileName << prefix;
+            fileName << ".";
+            fileName << static_cast<int>(bc_records.first.first);
+            fileName << "-";
+            fileName << static_cast<int>(bc_records.first.second);
+            fileName << ".demux.bam";
+            BAM::BamWriter writer(fileName.str(), header);
+            for (const auto& r : bc_records.second)
+                writer.Write(r);
+        }
+    }
+
+    if (!settings.NoReports) {
+        std::ofstream summaryStream(prefix + ".demux.summary");
+        summaryStream << summary;
+
+        std::ofstream counts(prefix + ".demux.counts");
+        counts << "IndexLeft\tIndexRight\tCounts" << std::endl;
+        for (const auto& left_right_counts : barcodePairCounts)
+            for (const auto& right_counts : left_right_counts.second)
+                counts << static_cast<int>(left_right_counts.first) << "\t"
+                       << static_cast<int>(right_counts.first) << "\t" << right_counts.second
+                       << std::endl;
+    }
+}
+
 void LimaWorkflow::Process(const LimaSettings& settings,
                            const std::vector<std::string>& datasetPaths,
                            const std::vector<Barcode>& barcodes)
 {
+
     // Single writer for non-split mode
     std::unique_ptr<BAM::BamWriter> writer;
     // Header can be used for split mode
     BAM::BamHeader header;
     // Treat every dataset as an individual entity
     for (const auto& datasetPath : datasetPaths) {
+        writer.reset(nullptr);
+
+        std::string prefix = AdvancedFileUtils::FilePrefixInfix(datasetPath);
+        Summary summary;
+        // Individual queue per dataset
+        PacBio::Parallel::WorkQueue<TaskResult> workQueue(settings.NumThreads);
+        std::future<void> workerThread =
+            std::async(std::launch::async, WorkerThread, std::ref(workQueue), std::ref(writer),
+                       std::ref(settings), std::ref(prefix), std::ref(summary), std::ref(header));
         // Get a query to the underlying BAM files, respecting filters
         auto query = AdvancedFileUtils::BamQuery(datasetPath);
-        std::vector<Uhu::Threadpool::ThreadPool::TaskFuture<TaskResult>> v;
-        Summary summary;
-        std::atomic_int SubreadBelowMinLength{0};
-        std::atomic_int SubreadAboveMinLength{0};
-        auto Submit = [&](const std::vector<BAM::BamRecord>& records) {
+        auto Submit = [&barcodes, &settings, &summary](std::vector<BAM::BamRecord> records) {
             TaskResult result{LimaWorkflow::Tag(records, barcodes, settings)};
             const auto& bhp = result.BHP;
 
@@ -264,9 +342,9 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                             r.Barcodes(std::make_pair(bhp.Left.Idx, bhp.Right.Idx));
                             r.BarcodeQuality(bhp.MeanScore);
                             result.Records.emplace_back(std::move(r));
-                            ++SubreadAboveMinLength;
+                            ++summary.SubreadAboveMinLength;
                         } else {
-                            ++SubreadBelowMinLength;
+                            ++summary.SubreadBelowMinLength;
                         }
                     }
                 }
@@ -281,97 +359,25 @@ void LimaWorkflow::Process(const LimaSettings& settings,
             return result;
         };
 
-        std::string prefix = AdvancedFileUtils::FilePrefixInfix(datasetPath);
-
         int zmwNum = -1;
         std::vector<BAM::BamRecord> records;
         for (auto& r : *query) {
-            if (!writer && !settings.NoBam && !settings.SplitBam)
-                writer.reset(new BAM::BamWriter(prefix + ".demux.bam", r.Header().DeepCopy()));
+            if (!writer)
+                if (!settings.NoBam && !settings.SplitBam)
+                    writer.reset(new BAM::BamWriter(prefix + ".demux.bam", r.Header().DeepCopy()));
             if (settings.SplitBam) header = r.Header().DeepCopy();
 
             if (zmwNum == -1) {
                 zmwNum = r.HoleNumber();
             } else if (zmwNum != r.HoleNumber()) {
-                if (!records.empty())
-                    v.push_back(Uhu::Threadpool::DefaultThreadPool::submitJob(Submit, records));
+                if (!records.empty()) workQueue.ProduceWith(Submit, records);
                 zmwNum = r.HoleNumber();
                 records.clear();
             }
             records.push_back(r);
         }
-        if (!records.empty())
-            v.push_back(Uhu::Threadpool::DefaultThreadPool::submitJob(Submit, records));
-
-        std::map<uint8_t, std::map<uint8_t, int>> barcodePairCounts;
-
-        std::ofstream report;
-        if (!settings.NoReports) {
-            report.open(prefix + ".demux.report");
-            report << "ZMW\tIndexLeft\tIndexRight\tMeanScoreLeft\tMeanScoreRight\tMeanScore\tClipsL"
-                      "eft\tClipsRight\tScoresLeft\tScoresRight"
-                   << std::endl;
-        }
-
-        std::map<std::pair<uint8_t, uint8_t>, std::vector<BAM::BamRecord>> barcodeToRecords;
-
-        for (auto& item : v) {
-            auto p = item.get();
-            if (p.PassingFilters) {
-                const auto leftIdx = p.BHP.Left.Idx;
-                const auto rightIdx = p.BHP.Right.Idx;
-                if (leftIdx == rightIdx)
-                    ++summary.SymmetricCounts;
-                else
-                    ++summary.AsymmetricCounts;
-
-                if ((settings.KeepSymmetric && leftIdx == rightIdx) || !settings.KeepSymmetric) {
-                    if (settings.SplitBam)
-                        for (auto&& r : p.Records)
-                            barcodeToRecords[std::make_pair(leftIdx, rightIdx)].emplace_back(
-                                std::move(r));
-                    else if (!settings.NoBam)
-                        for (auto& r : p.Records)
-                            writer->Write(r);
-                    if (!settings.NoReports) ++barcodePairCounts[leftIdx][rightIdx];
-                }
-            }
-            if (!settings.NoReports) report << p.Report << std::endl;
-        }
-
-        if (settings.SplitBam) {
-            for (const auto& bc_records : barcodeToRecords) {
-                std::stringstream fileName;
-                fileName << prefix;
-                fileName << ".";
-                fileName << static_cast<int>(bc_records.first.first);
-                fileName << "-";
-                fileName << static_cast<int>(bc_records.first.second);
-                fileName << ".demux.bam";
-                BAM::BamWriter writer(fileName.str(), header);
-                for (const auto& r : bc_records.second)
-                    writer.Write(r);
-            }
-        }
-
-        if (!settings.NoReports) {
-            std::ofstream summaryStream(prefix + ".demux.summary");
-            summaryStream << summary;
-            summaryStream << std::endl;
-            summaryStream << "Reads above length                    : " << SubreadAboveMinLength
-                          << std::endl;
-            summaryStream << "Reads below length                    : " << SubreadBelowMinLength
-                          << std::endl;
-
-            std::ofstream counts(prefix + ".demux.counts");
-            counts << "IndexLeft\tIndexRight\tCounts" << std::endl;
-            for (const auto& left_right_counts : barcodePairCounts)
-                for (const auto& right_counts : left_right_counts.second)
-                    counts << static_cast<int>(left_right_counts.first) << "\t"
-                           << static_cast<int>(right_counts.first) << "\t" << right_counts.second
-                           << std::endl;
-        }
-        writer.reset(nullptr);
+        if (!records.empty()) workQueue.ProduceWith(Submit, records);
+        workQueue.Finalize();
     }
 }
 

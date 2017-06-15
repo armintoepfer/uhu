@@ -141,10 +141,6 @@ and 2 microseconds per alignment. This includes IO.
 ### Is there a way to show the progress?
 No. Please run `wc -l prefix.demux.report` to get the number of processed ZMWs.
 
-### Can I set the number of threads?
-Not as of now. *Lima* takes number of cores - 1, except if there is only 1 core
-available, then 1 core :)
-
 ### How can I easily plot the score distributions?
 Use `R`. Example:
 
