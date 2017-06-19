@@ -364,7 +364,9 @@ void LimaWorkflow::Process(const LimaSettings& settings,
         for (auto& r : *query) {
             if (!writer)
                 if (!settings.NoBam && !settings.SplitBam)
-                    writer.reset(new BAM::BamWriter(prefix + ".demux.bam", r.Header().DeepCopy()));
+                    writer.reset(new BAM::BamWriter(
+                        prefix + ".demux.bam", r.Header().DeepCopy(),
+                        BAM::BamWriter::CompressionLevel::CompressionLevel_0, settings.NumThreads));
             if (settings.SplitBam) header = r.Header().DeepCopy();
 
             if (zmwNum == -1) {
