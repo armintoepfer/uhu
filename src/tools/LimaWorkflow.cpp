@@ -175,7 +175,7 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
         auto bestFwd = std::max_element(fwd.begin(), fwd.end(), cmp);
         auto bestRC = std::max_element(rc.begin(), rc.end(), cmp);
 
-        if (bestFwd->ScoreSum > bestRC->ScoreSum)
+        if (bestFwd->Score > bestRC->Score)
             bc = *bestFwd;
         else
             bc = *bestRC;
