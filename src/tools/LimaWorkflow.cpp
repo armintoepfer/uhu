@@ -212,7 +212,7 @@ void WorkerThread(PacBio::Parallel::WorkQueue<TaskResult>& queue,
                   std::unique_ptr<BAM::BamWriter>& writer, const LimaSettings& settings,
                   const std::string& prefix, Summary& summary, BAM::BamHeader& header)
 {
-    std::map<uint8_t, std::map<uint8_t, int>> barcodePairCounts;
+    std::map<uint16_t, std::map<uint16_t, int>> barcodePairCounts;
 
     std::ofstream report;
     if (!settings.NoReports) {
@@ -222,7 +222,7 @@ void WorkerThread(PacBio::Parallel::WorkQueue<TaskResult>& queue,
                << std::endl;
     }
 
-    std::map<std::pair<uint8_t, uint8_t>, std::vector<BAM::BamRecord>> barcodeToRecords;
+    std::map<std::pair<uint16_t, uint16_t>, std::vector<BAM::BamRecord>> barcodeToRecords;
 
     auto LambdaWorker = [&](TaskResult&& p) {
         if (p.PassingFilters) {
