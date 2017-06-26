@@ -183,6 +183,9 @@ Use `--symmetric`.
  * CCS read support
  * Barcodes of every adapter gets scored for raw subreads
  * Do not enforce symmetric barcode pairing, which increases PPV
+ * For asymmetric barcodes, `lima` reports the identified order, instead of
+   descending sorting
+ * Call barcodes per read and not per adapter
  * Open-source and can be compiled on your local Mac or Linux machine
  * Faster
  * Nice reports for QC
