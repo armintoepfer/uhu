@@ -77,4 +77,6 @@ if (UHU_build_bin)
     endif()
 
     create_exe(lima)
+    create_exe(zmw_stats)
+    create_exe(zmw_to_ref)
 endif()
