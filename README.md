@@ -22,7 +22,7 @@ cmake (3.2), and a c++14 compiler (>=gcc-6, clang). `ninja` or
   git submodule update --init
   git submodule foreach git pull origin develop
   mkdir build && cd build
-  cmake -GNinja -DCMAKE_INSTALL_PREFIX=~/bin .. && ninja
+  cmake -GNinja -DCMAKE_INSTALL_PREFIX=~/ .. && ninja
   ninja install
   ```
 
