@@ -185,6 +185,7 @@ static int Runner(const PacBio::CLI::Results& options)
     for (const auto& r : *query) {
         if (r.Impl().IsSupplementaryAlignment()) continue;
         if (!r.Impl().IsPrimaryAlignment()) continue;
+        if (!r.HasBarcodes() || !r.HasBarcodeQuality()) continue;
         if (r.ReferenceEnd() - r.ReferenceStart() < 1500) {
             ++shortCounter;
             continue;
