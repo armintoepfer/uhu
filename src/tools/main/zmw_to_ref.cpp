@@ -180,11 +180,12 @@ static int Runner(const PacBio::CLI::Results& options)
     int counter = 0;
     int truePositive = 0;
     int shortCounter = 0;
+    std::ofstream report("report");
+    report << "ZMW BQ MAPQ BCF BCR EXP_REF ACT_REF MATCH" << std::endl;
     for (const auto& r : *query) {
         if (r.Impl().IsSupplementaryAlignment()) continue;
         if (!r.Impl().IsPrimaryAlignment()) continue;
-        // if (shortCounter + counter == 10000) break;
-        if (r.ReferenceEnd() - r.ReferenceStart() < 1000) {
+        if (r.ReferenceEnd() - r.ReferenceStart() < 1500) {
             ++shortCounter;
             continue;
         }
@@ -202,12 +203,15 @@ static int Runner(const PacBio::CLI::Results& options)
         if (refName == bcToRef.at(r.BarcodeForward() + 1)) ++truePositive;
         ++counter;
 
-        // std::cerr << r.HoleNumber() << " " << r.BarcodeForward() << " " << r.BarcodeReverse() << " "
-        //           << refName << " " << bcToRef.at(r.BarcodeForward() + 1) << " "
-        //           << (refName == bcToRef.at(r.BarcodeForward() + 1)) << " " << std::endl;
+        if (refName != bcToRef.at(r.BarcodeForward() + 1))
+            report << r.HoleNumber() << " " << (int)r.BarcodeQuality() << " " << (int)r.MapQuality()
+                   << " " << r.BarcodeForward() << " " << r.BarcodeReverse() << " " << refName
+                   << " " << bcToRef.at(r.BarcodeForward() + 1) << " "
+                   << (refName == bcToRef.at(r.BarcodeForward() + 1)) << " " << std::endl;
     }
     std::cerr << "PPV  : " << (1.0 * truePositive / counter) << std::endl;
     std::cerr << "YIELD: " << (1.0 * counter / (counter + shortCounter)) << std::endl;
+    std::cerr << "#ZMWs: " << counter << std::endl;
 
     return EXIT_SUCCESS;
 }
