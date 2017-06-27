@@ -88,17 +88,13 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
 
     int counterLeft = 0;
     std::vector<BarcodeHit> left(numBarcodes, numRecords);
-    std::vector<BarcodeHit> leftRC(numBarcodes, numRecords);
 
     int counterRight = 0;
     std::vector<BarcodeHit> right(numBarcodes, numRecords);
-    std::vector<BarcodeHit> rightRC(numBarcodes, numRecords);
 
     for (size_t i = 0; i < numBarcodes; ++i) {
         left[i].Idx = i;
-        leftRC[i].Idx = i;
         right[i].Idx = i;
-        rightRC[i].Idx = i;
     }
 
     auto NormalizeScore = [&](const double& score) {
@@ -128,16 +124,20 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                                              std::min(targetLength, barcodeLengthWSpacing));
             for (size_t i = 0; i < queries.size(); ++i) {
                 const auto align = AlignUtils::AlignForward(alignerLeft, queries[i]);
-                left[i].Add(NormalizeScore(align.sw_score), align.ref_end);
+                const auto score = NormalizeScore(align.sw_score);
 
                 const auto alignRC = AlignUtils::AlignRC(alignerLeft, queries[i]);
-                leftRC[i].Add(NormalizeScore(alignRC.sw_score), alignRC.ref_end);
+                const auto scoreRC = NormalizeScore(alignRC.sw_score);
+
+                if (score > scoreRC)
+                    left[i].Add(score, align.ref_end);
+                else
+                    left[i].Add(scoreRC, alignRC.ref_end);
             }
             ++counterLeft;
         } else {
             for (size_t i = 0; i < queries.size(); ++i) {
                 left[i].Add(-1, 0);
-                leftRC[i].Add(-1, 0);
             }
         }
 
@@ -148,51 +148,45 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                                               targetLength - alignerRightBegin);
             for (size_t i = 0; i < queries.size(); ++i) {
                 const auto align = AlignUtils::AlignForward(alignerRight, queries[i]);
-                right[i].Add(NormalizeScore(align.sw_score), alignerRightBegin + align.ref_begin);
+                const auto score = NormalizeScore(align.sw_score);
 
                 const auto alignRC = AlignUtils::AlignRC(alignerRight, queries[i]);
-                rightRC[i].Add(NormalizeScore(alignRC.sw_score),
-                               alignerRightBegin + alignRC.ref_begin);
+                const auto scoreRC = NormalizeScore(alignRC.sw_score);
+
+                if (score > scoreRC) {
+                    right[i].Add(score, alignerRightBegin + align.ref_begin);
+                } else
+                    right[i].Add(scoreRC, alignerRightBegin + alignRC.ref_begin);
             }
             ++counterRight;
         } else {
             for (size_t i = 0; i < queries.size(); ++i) {
                 right[i].Add(-1, targetLength);
-                rightRC[i].Add(-1, targetLength);
             }
         }
     }
 
-    auto Compute = [&](std::vector<BarcodeHit>& fwd, std::vector<BarcodeHit>& rc, int denominator) {
-        BarcodeHit bc;
-
+    auto Compute = [&](std::vector<BarcodeHit>& fwd, int denominator) {
         if (denominator == 0) denominator = 1;
         for (size_t i = 0; i < numBarcodes; ++i) {
             fwd[i].Normalize(denominator);
-            rc[i].Normalize(denominator);
         }
         auto cmp = [](const BarcodeHit& l, const BarcodeHit& r) { return l.Score < r.Score; };
         auto bestFwd = std::max_element(fwd.begin(), fwd.end(), cmp);
-        auto bestRC = std::max_element(rc.begin(), rc.end(), cmp);
 
-        if (bestFwd->Score > bestRC->Score)
-            bc = *bestFwd;
-        else
-            bc = *bestRC;
-
-        return bc;
+        return *bestFwd;
     };
 
     BarcodeHit leftBH;
     BarcodeHit rightBH;
 
     if (counterLeft > 0)
-        leftBH = Compute(left, leftRC, counterLeft);
+        leftBH = Compute(left, counterLeft);
     else
         leftBH.Clips.resize(numRecords);
 
     if (counterRight > 0)
-        rightBH = Compute(right, rightRC, counterRight);
+        rightBH = Compute(right, counterRight);
     else
         rightBH.Clips.resize(numRecords);
 
