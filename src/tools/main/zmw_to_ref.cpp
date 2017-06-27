@@ -209,9 +209,10 @@ static int Runner(const PacBio::CLI::Results& options)
                    << " " << bcToRef.at(r.BarcodeForward() + 1) << " "
                    << (refName == bcToRef.at(r.BarcodeForward() + 1)) << " " << std::endl;
     }
-    std::cerr << "PPV  : " << (1.0 * truePositive / counter) << std::endl;
-    std::cerr << "YIELD: " << (1.0 * counter / (counter + shortCounter)) << std::endl;
-    std::cerr << "#ZMWs: " << counter << std::endl;
+    std::cerr << "PPV   : " << truePositive << " ("
+              << (1.0 * truePositive / (counter + shortCounter)) << ")" << std::endl;
+    std::cerr << ">1.5kb: " << counter << std::endl;
+    std::cerr << "#ZMWs : " << counter + shortCounter << std::endl;
 
     return EXIT_SUCCESS;
 }
