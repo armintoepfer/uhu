@@ -92,6 +92,7 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
     int counterRight = 0;
     std::vector<BarcodeHit> right(numBarcodes, numRecords);
 
+    // TODO: Inc those to fit fasta names
     for (size_t i = 0; i < numBarcodes; ++i) {
         left[i].Idx = i;
         right[i].Idx = i;
