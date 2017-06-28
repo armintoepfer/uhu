@@ -91,6 +91,14 @@ const PlainOption Tailed{
     CLI::Option::BoolType()
 };
 
+const PlainOption ZMW{
+    "zmw",
+    {"z", "zmw"},
+    "Zmw",
+    "Flag to analyze only one subread per ZMW.",
+    CLI::Option::BoolType()
+};
+
 // clang-format on
 }  // namespace OptionNames
 
@@ -105,7 +113,8 @@ static PacBio::CLI::Interface CreateCLI()
 
     i.AddPositionalArguments({{"bam", "Source BAM", "FILE"}});
 
-    i.AddOptions({OptionNames::MinLength, OptionNames::Percentiles, OptionNames::Tailed});
+    i.AddOptions(
+        {OptionNames::MinLength, OptionNames::Percentiles, OptionNames::Tailed, OptionNames::ZMW});
 
     return i;
 }
@@ -200,6 +209,7 @@ static int Runner(const PacBio::CLI::Results& options)
     const int minLength = options[OptionNames::MinLength];
     const int nPercentiles = options[OptionNames::Percentiles];
     const bool tailed = options[OptionNames::Tailed];
+    const bool zmwMode = options[OptionNames::ZMW];
 
     if (minLength < 0) {
         std::cerr << "ERROR: --minLength must be >= 0" << std::endl;
@@ -226,62 +236,73 @@ static int Runner(const PacBio::CLI::Results& options)
 
     auto query = BamQuery(options.PositionalArguments().front());
     std::vector<std::pair<int, bool>> observations;
-    int counter = 0;
     int truePositive = 0;
     int shortCounter = 0;
     std::ofstream report("report");
-    report << "ZMW BQ MAPQ BCF BCR EXP_REF ACT_REF MATCH" << std::endl;
-    std::cout << "ReadName,HoleNumber,RefName,RefStart,RefEnd,RefLength,MapQuality,MappedID,"
-                 "BarcodedID,BarcodeFwd,BarcodeRev,BarcodeQuality"
-              << std::endl;
+    report << "ReadName,HoleNumber,RefName,RefStart,RefEnd,RefLength,MapQuality,MappedID,"
+              "BarcodedID,BarcodeFwd,BarcodeRev,BarcodeQuality"
+           << std::endl;
+    std::map<int, int> bc_tps;
+    std::map<int, int> bc_all;
+    std::map<int, bool> zmwSeen;
     for (const auto& r : *query) {
         if (r.Impl().IsSupplementaryAlignment()) continue;
         if (!r.Impl().IsPrimaryAlignment()) continue;
         if (!r.HasBarcodes() || !r.HasBarcodeQuality()) continue;
-        const int length = r.ReferenceEnd() - r.ReferenceStart();
-        if (length < minLength) {
-            ++shortCounter;
-            continue;
+        if ((zmwMode && zmwSeen.find(r.HoleNumber()) == zmwSeen.cend()) | !zmwMode) {
+            const int length = r.ReferenceEnd() - r.ReferenceStart();
+            if (length < minLength) {
+                ++shortCounter;
+                continue;
+            }
+            std::stringstream ss(r.ReferenceName());
+            std::string item;
+            std::vector<std::string> elems;
+            int i = 0;
+            std::string refName;
+            while (std::getline(ss, item, '.')) {
+                if (i == 1 || i == 2) refName += item;
+                if (i == 1) refName += ".";
+                ++i;
+            }
+            int idx;
+            if (tailed)
+                idx = std::floor(r.BarcodeForward() / 2.0) + 1;
+            else
+                idx = r.BarcodeForward() + 1;
+            const std::string bcRef = bcToRef.at(idx);
+
+            const bool positive = refName == bcRef;
+            if (positive) ++bc_tps[idx];
+            ++bc_all[idx];
+
+            zmwSeen[r.HoleNumber()] = true;
+
+            report << r.FullName() << ',' << r.HoleNumber() << ',' << r.ReferenceName() << ','
+                   << r.ReferenceStart() << ',' << r.ReferenceEnd() << ',' << length << ','
+                   << (int)r.MapQuality() << ',' << refName << ',' << bcRef << ','
+                   << r.BarcodeForward() << ',' << r.BarcodeReverse() << ','
+                   << (int)r.BarcodeQuality() << std::endl;
+
+            if (nPercentiles > 1) observations.emplace_back(std::make_pair(length, positive));
         }
-        std::stringstream ss(r.ReferenceName());
-        std::string item;
-        std::vector<std::string> elems;
-        int i = 0;
-        std::string refName;
-        while (std::getline(ss, item, '.')) {
-            if (i == 1 || i == 2) refName += item;
-            if (i == 1) refName += ".";
-            ++i;
-        }
-
-        int idx;
-        if (tailed)
-            idx = std::floor(r.BarcodeForward() / 2.0) + 1;
-        else
-            idx = r.BarcodeForward() + 1;
-        const std::string bcRef = bcToRef.at(idx);
-
-        const bool positive = refName == bcRef;
-        if (positive) ++truePositive;
-        ++counter;
-
-        report << r.HoleNumber() << " " << (int)r.BarcodeQuality() << " " << (int)r.MapQuality()
-               << " " << r.BarcodeForward() << " " << r.BarcodeReverse() << " " << refName << " "
-               << bcRef << " " << (refName == bcRef) << " " << std::endl;
-
-        std::cout << r.FullName() << ',' << r.HoleNumber() << ',' << r.ReferenceName() << ','
-                  << r.ReferenceStart() << ',' << r.ReferenceEnd() << ',' << length << ','
-                  << (int)r.MapQuality() << ',' << refName << ',' << bcRef << ','
-                  << r.BarcodeForward() << ',' << r.BarcodeReverse() << ','
-                  << (int)r.BarcodeQuality() << std::endl;
-
-        if (nPercentiles > 1) observations.emplace_back(std::make_pair(length, positive));
     }
 
-    std::cerr << "PPV   : " << truePositive << " ("
-              << (1.0 * truePositive / (counter + shortCounter)) << ")" << std::endl;
-    std::cerr << '>' << minLength << "bp: " << counter << std::endl;
-    std::cerr << "#Reads : " << counter + shortCounter << std::endl;
+    double ppvSum = 0.0;
+    double ppvCounter = 0;
+    int zmws = 0;
+    for (const auto& bc_tp : bc_tps) {
+        std::cerr << 1.0 * bc_tp.second / bc_all.at(bc_tp.first) << " ";
+        ppvSum += 1.0 * bc_tp.second / bc_all.at(bc_tp.first);
+        zmws += bc_all.at(bc_tp.first);
+        ++ppvCounter;
+    }
+    std::cerr << std::endl;
+
+    std::cerr << "PPV          : " << ppvSum / ppvCounter << std::endl;
+    std::cerr << '>' << std::setw(12) << std::left << std::to_string(minLength) + "bp"
+              << ": " << zmws << std::endl;
+    std::cerr << "Measured reads: " << zmws + shortCounter << std::endl;
 
     const int nObs = observations.size();
     if (nObs > 1 && nPercentiles > 1) {
