@@ -206,12 +206,12 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
     BarcodeHit rightBH;
 
     if (counterLeft > 0)
-        leftBH = Compute(left, counterLeft);
+        leftBH = Compute(left, maxScoring ? counterFullLeft : counterLeft);
     else
         leftBH.Clips.resize(numRecords);
 
     if (counterRight > 0)
-        rightBH = Compute(right, counterRight);
+        rightBH = Compute(right, maxScoring ? counterFullRight : counterRight);
     else
         rightBH.Clips.resize(numRecords);
 
