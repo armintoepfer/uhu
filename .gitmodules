@@ -1,8 +1,8 @@
 [submodule "third-party/pbcopper"]
 	path = third-party/pbcopper
-	url = git@github.com:PacificBiosciences/pbcopper.git
+	url = https://github.com/PacificBiosciences/pbcopper.git
 	branch = master
 [submodule "third-party/pbbam"]
 	path = third-party/pbbam
-	url = git@github.com:PacificBiosciences/pbbam.git
+	url = https://github.com/PacificBiosciences/pbbam.git
 	branch = master
