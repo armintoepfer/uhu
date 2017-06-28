@@ -204,11 +204,10 @@ static int Runner(const PacBio::CLI::Results& options)
         if (refName == bcToRef.at(r.BarcodeForward() + 1)) ++truePositive;
         ++counter;
 
-        if (refName != bcToRef.at(r.BarcodeForward() + 1))
-            report << r.HoleNumber() << " " << (int)r.BarcodeQuality() << " " << (int)r.MapQuality()
-                   << " " << r.BarcodeForward() << " " << r.BarcodeReverse() << " " << refName
-                   << " " << bcToRef.at(r.BarcodeForward() + 1) << " "
-                   << (refName == bcToRef.at(r.BarcodeForward() + 1)) << " " << std::endl;
+        report << r.HoleNumber() << " " << (int)r.BarcodeQuality() << " " << (int)r.MapQuality()
+               << " " << r.BarcodeForward() << " " << r.BarcodeReverse() << " " << refName << " "
+               << bcToRef.at(r.BarcodeForward() + 1) << " "
+               << (refName == bcToRef.at(r.BarcodeForward() + 1)) << " " << std::endl;
     }
     std::cerr << "PPV   : " << truePositive << " ("
               << (1.0 * truePositive / (counter + shortCounter)) << ")" << std::endl;
