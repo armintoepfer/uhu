@@ -51,6 +51,12 @@ inline std::ostream& operator<<(std::ostream& stream, const Summary& s)
 
 inline void BarcodeHit::Add(int score, int clip)
 {
+    Scores.push_back(score);
+    Clips.push_back(clip);
+}
+
+inline void BarcodeHit::AddWithSumScore(int score, int clip)
+{
     if (score > 0) ScoreSum += score;
     Scores.push_back(score);
     Clips.push_back(clip);

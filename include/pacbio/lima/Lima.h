@@ -98,6 +98,7 @@ struct BarcodeHit
     std::vector<int> Clips;
 
     void Add(int score, int clip);
+    void AddWithSumScore(int score, int clip);
     void Normalize(int denominator);
 };
 

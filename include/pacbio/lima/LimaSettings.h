@@ -60,6 +60,7 @@ struct LimaSettings
     const bool NoReports;
     const bool SplitBam;
     size_t NumThreads;
+    int MaxScoredReads;
 
     /// Parses the provided CLI::Results and retrieves a defined set of options.
     LimaSettings(const PacBio::CLI::Results& options);

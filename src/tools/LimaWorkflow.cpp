@@ -87,9 +87,11 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
     size_t numRecords = records.size();
 
     int counterLeft = 0;
+    int counterFullLeft = 0;
     std::vector<BarcodeHit> left(numBarcodes, numRecords);
 
     int counterRight = 0;
+    int counterFullRight = 0;
     std::vector<BarcodeHit> right(numBarcodes, numRecords);
 
     // TODO: Inc those to fit fasta names
@@ -102,6 +104,9 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
         return std::round(100.0 * score) / (barcodeLength * settings.MatchScore);
     };
 
+    const int maxScoredReads = settings.MaxScoredReads;
+    const bool maxScoring = settings.MaxScoredReads > 0;
+
     for (const auto& r : records) {
         // Activate if there is no context flag or if the left/right adapter is present
         const bool hasCX = r.HasLocalContextFlags();
@@ -109,6 +114,7 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
             ((hasCX && (r.LocalContextFlags() & leftAdapterFlag)) || !hasCX);
         const bool hasAdapterRight =
             ((hasCX && (r.LocalContextFlags() & rightAdapterFlag)) || !hasCX);
+        const bool isFull = hasAdapterLeft && hasAdapterRight;
 
         const auto target = r.Sequence();
         const int targetLength = target.size();
@@ -130,11 +136,20 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                 const auto alignRC = AlignUtils::AlignRC(alignerLeft, queries[i]);
                 const auto scoreRC = NormalizeScore(alignRC.sw_score);
 
-                if (score > scoreRC)
-                    left[i].Add(score, align.ref_end);
-                else
-                    left[i].Add(scoreRC, alignRC.ref_end);
+                if ((maxScoring && isFull && counterFullLeft < maxScoredReads) || !maxScoring) {
+                    if (score > scoreRC)
+                        left[i].AddWithSumScore(score, align.ref_end);
+                    else
+                        left[i].AddWithSumScore(scoreRC, alignRC.ref_end);
+                } else {
+                    if (score > scoreRC)
+                        left[i].Add(score, align.ref_end);
+                    else
+                        left[i].Add(scoreRC, alignRC.ref_end);
+                }
             }
+            if ((maxScoring && isFull && counterFullLeft < maxScoredReads) || !maxScoring)
+                ++counterFullLeft;
             ++counterLeft;
         } else {
             for (size_t i = 0; i < queries.size(); ++i) {
@@ -154,11 +169,20 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                 const auto alignRC = AlignUtils::AlignRC(alignerRight, queries[i]);
                 const auto scoreRC = NormalizeScore(alignRC.sw_score);
 
-                if (score > scoreRC) {
-                    right[i].Add(score, alignerRightBegin + align.ref_begin);
-                } else
-                    right[i].Add(scoreRC, alignerRightBegin + alignRC.ref_begin);
+                if ((maxScoring && isFull && counterFullRight < maxScoredReads) || !maxScoring) {
+                    if (score > scoreRC)
+                        right[i].AddWithSumScore(score, alignerRightBegin + align.ref_begin);
+                    else
+                        right[i].AddWithSumScore(scoreRC, alignerRightBegin + alignRC.ref_begin);
+                } else {
+                    if (score > scoreRC)
+                        right[i].Add(score, alignerRightBegin + align.ref_begin);
+                    else
+                        right[i].Add(scoreRC, alignerRightBegin + alignRC.ref_begin);
+                }
             }
+            if ((maxScoring && isFull && counterFullRight < maxScoredReads) || !maxScoring)
+                ++counterFullRight;
             ++counterRight;
         } else {
             for (size_t i = 0; i < queries.size(); ++i) {

@@ -68,6 +68,14 @@ const PlainOption WindowSizeMult{
     CLI::Option::FloatType(1.2)
 };
 
+const PlainOption MaxScoredReads{
+    "maxScoredReads",
+    {"n","max-scored-reads"},
+    "MaxScoredReads",
+    "Only use up to N reads to find the barcode, 0 means use all.",
+    CLI::Option::IntType(0)
+};
+
 const PlainOption MinScore{
     "minScore",
     {"m","min-score"},
@@ -171,6 +179,7 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     , NoBam(options[OptionNames::NoBam])
     , NoReports(options[OptionNames::NoReports])
     , SplitBam(options[OptionNames::SplitBam])
+    , MaxScoredReads(options[OptionNames::MaxScoredReads])
 {
     if (SplitBam && NoBam)
         throw std::runtime_error("Options --split-bam and --no-bam are mutually exclusive!");
@@ -235,7 +244,8 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
         OptionNames::KeepSymmetric,
         OptionNames::WindowSizeMult,
         OptionNames::MinLength,
-        OptionNames::MinScore
+        OptionNames::MinScore,
+        OptionNames::MaxScoredReads
     });
 
     i.AddGroup("Aligner Configuration",
