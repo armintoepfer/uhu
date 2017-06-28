@@ -43,10 +43,13 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/accumulators/accumulators.hpp>
 #include <boost/accumulators/statistics.hpp>
+
+#include <pacbio/data/PlainOption.h>
 
 #include <pbcopper/cli/CLI.h>
 #include <pbcopper/utility/FileUtils.h>
@@ -61,6 +64,35 @@
 
 namespace PacBio {
 namespace Cleric {
+namespace OptionNames {
+using PlainOption = Data::PlainOption;
+// clang-format off
+const PlainOption MinLength{
+    "minLength",
+    {"m","min-length"},
+    "MinLength",
+    "Minimum reference span to score a read.",
+    CLI::Option::IntType(0)
+};
+
+const PlainOption Percentiles{
+    "percentiles",
+    {"p", "percentiles"},
+    "Percentiles",
+    "Number of percentiles between [0, 100] to compute.",
+    CLI::Option::IntType(0)
+};
+
+const PlainOption Tailed{
+    "tailed",
+    {"t", "tailed"},
+    "Tailed",
+    "Flag to analyze in tailed mode.",
+    CLI::Option::BoolType()
+};
+
+// clang-format on
+}  // namespace OptionNames
 
 static PacBio::CLI::Interface CreateCLI()
 {
@@ -72,6 +104,8 @@ static PacBio::CLI::Interface CreateCLI()
     i.AddVersionOption();  // use built-in version output
 
     i.AddPositionalArguments({{"bam", "Source BAM", "FILE"}});
+
+    i.AddOptions({OptionNames::MinLength, OptionNames::Percentiles, OptionNames::Tailed});
 
     return i;
 }
@@ -163,6 +197,20 @@ static int Runner(const PacBio::CLI::Results& options)
         return EXIT_FAILURE;
     }
 
+    const int minLength = options[OptionNames::MinLength];
+    const int nPercentiles = options[OptionNames::Percentiles];
+    const bool tailed = options[OptionNames::Tailed];
+
+    if (minLength < 0) {
+        std::cerr << "ERROR: --minLength must be >= 0" << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    if (nPercentiles < 0) {
+        std::cerr << "ERROR: --percentiles must be >= 0" << std::endl;
+        return EXIT_FAILURE;
+    }
+
     std::map<int, std::vector<uint8_t>> cxPerZmw;
 
     auto BamQuery = [](const std::string& filePath) {
@@ -177,16 +225,21 @@ static int Runner(const PacBio::CLI::Results& options)
     };
 
     auto query = BamQuery(options.PositionalArguments().front());
+    std::vector<std::pair<int, bool>> observations;
     int counter = 0;
     int truePositive = 0;
     int shortCounter = 0;
     std::ofstream report("report");
     report << "ZMW BQ MAPQ BCF BCR EXP_REF ACT_REF MATCH" << std::endl;
+    std::cout << "ReadName,HoleNumber,RefName,RefStart,RefEnd,RefLength,MapQuality,MappedID,"
+                 "BarcodedID,BarcodeFwd,BarcodeRev,BarcodeQuality"
+              << std::endl;
     for (const auto& r : *query) {
         if (r.Impl().IsSupplementaryAlignment()) continue;
         if (!r.Impl().IsPrimaryAlignment()) continue;
         if (!r.HasBarcodes() || !r.HasBarcodeQuality()) continue;
-        if (r.ReferenceEnd() - r.ReferenceStart() < 1500) {
+        const int length = r.ReferenceEnd() - r.ReferenceStart();
+        if (length < minLength) {
             ++shortCounter;
             continue;
         }
@@ -201,18 +254,72 @@ static int Runner(const PacBio::CLI::Results& options)
             ++i;
         }
 
-        if (refName == bcToRef.at(r.BarcodeForward() + 1)) ++truePositive;
+        int idx;
+        if (tailed)
+            idx = std::floor(r.BarcodeForward() / 2.0) + 1;
+        else
+            idx = r.BarcodeForward() + 1;
+        const std::string bcRef = bcToRef.at(idx);
+
+        const bool positive = refName == bcRef;
+        if (positive) ++truePositive;
         ++counter;
 
         report << r.HoleNumber() << " " << (int)r.BarcodeQuality() << " " << (int)r.MapQuality()
                << " " << r.BarcodeForward() << " " << r.BarcodeReverse() << " " << refName << " "
-               << bcToRef.at(r.BarcodeForward() + 1) << " "
-               << (refName == bcToRef.at(r.BarcodeForward() + 1)) << " " << std::endl;
+               << bcRef << " " << (refName == bcRef) << " " << std::endl;
+
+        std::cout << r.FullName() << ',' << r.HoleNumber() << ',' << r.ReferenceName() << ','
+                  << r.ReferenceStart() << ',' << r.ReferenceEnd() << ',' << length << ','
+                  << (int)r.MapQuality() << ',' << refName << ',' << bcRef << ','
+                  << r.BarcodeForward() << ',' << r.BarcodeReverse() << ','
+                  << (int)r.BarcodeQuality() << std::endl;
+
+        if (nPercentiles > 1) observations.emplace_back(std::make_pair(length, positive));
     }
+
     std::cerr << "PPV   : " << truePositive << " ("
               << (1.0 * truePositive / (counter + shortCounter)) << ")" << std::endl;
-    std::cerr << ">1.5kb: " << counter << std::endl;
-    std::cerr << "#ZMWs : " << counter + shortCounter << std::endl;
+    std::cerr << '>' << minLength << "bp: " << counter << std::endl;
+    std::cerr << "#Reads : " << counter + shortCounter << std::endl;
+
+    const int nObs = observations.size();
+    if (nObs > 1 && nPercentiles > 1) {
+        std::sort(observations.begin(), observations.end());
+        // Second Variant, C = 0 from
+        //  https://en.wikipedia.org/wiki/Percentile#The_Linear_Interpolation_Between_Closest_Ranks_method
+        std::vector<int> breaks;
+        for (int p = 1; p <= nPercentiles; ++p) {
+            // no + 1 because we're 0-indexing here
+            const double x = static_cast<double>(p) / nPercentiles * (nObs - 1);
+            breaks.push_back(static_cast<int>(std::floor(x) + 1));
+        }
+        int b = 0;
+        int i = 0;
+        int pos = 0;
+        int neg = 0;
+        for (const auto obs : observations) {
+            if (breaks[b] == i) {
+                const double perc = static_cast<double>(b + 1) / nPercentiles;
+                const double x = perc * (nObs - 1);
+                const double v = x - i;
+                const double l =
+                    observations[i - 1].first + v * (obs.first - observations[i - 1].first);
+                std::cerr << "PPV(" << perc * 100 << ", " << l << ") : " << pos << " ("
+                          << (1.0 * pos / (pos + neg)) << ")" << std::endl;
+                ++b;
+                pos = 0;
+                neg = 0;
+            }
+            if (obs.second)
+                ++pos;
+            else
+                ++neg;
+            ++i;
+        }
+        std::cerr << "PPV(100, " << observations.back().first << ") : " << pos << " ("
+                  << (1.0 * pos / (pos + neg)) << ")" << std::endl;
+    }
 
     return EXIT_SUCCESS;
 }
