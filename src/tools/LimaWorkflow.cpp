@@ -357,9 +357,15 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                                 clipLeft += r.QueryStart();
                                 clipRight += r.QueryStart();
                             }
+                            int oldStart = r.QueryStart();
+                            int oldEnd = r.QueryEnd();
                             r.Clip(BAM::ClipType::CLIP_TO_QUERY, clipLeft, clipRight);
                             r.Barcodes(std::make_pair(bhp.Left.Idx, bhp.Right.Idx));
                             r.BarcodeQuality(bhp.MeanScore);
+                            std::vector<int> bt = {bhp.Left.Scores.at(i), bhp.Right.Scores.at(i)};
+                            r.Impl().AddTag("bt", bt);
+                            std::vector<int> bp = {clipLeft - oldStart, oldEnd - clipRight};
+                            r.Impl().AddTag("bp", bp);
                             result.Records.emplace_back(std::move(r));
                             ++summary.SubreadAboveMinLength;
                         } else {
