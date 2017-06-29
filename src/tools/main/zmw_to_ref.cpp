@@ -230,7 +230,7 @@ static int Runner(const PacBio::CLI::Results& options)
     const bool zmwMode = options[OptionNames::ZMW];
     const bool computeMinBQ = minPPV != 0;
     if (minLength < 0) {
-        std::cerr << "ERROR: --minLength must be >= 0" << std::endl;
+        std::cerr << "ERROR: --min-length must be >= 0" << std::endl;
         return EXIT_FAILURE;
     }
 
