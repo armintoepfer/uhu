@@ -321,7 +321,7 @@ static int Runner(const PacBio::CLI::Results& options)
     double ppvCounter = 0;
     int missingBC = 0;
     for (const auto& bc_hits : barcodeHits) {
-        if (bc_hits.second.size() > 0) {
+        if (std::any_of(bc_hits.second.cbegin(), bc_hits.second.cend(), [](bool x) { return x; })) {
             ppvSum += 1.0 * std::accumulate(bc_hits.second.cbegin(), bc_hits.second.cend(), 0) /
                       bc_hits.second.size();
             ++ppvCounter;
