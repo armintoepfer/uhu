@@ -99,6 +99,22 @@ const PlainOption ZMW{
     CLI::Option::BoolType()
 };
 
+const PlainOption NumBC{
+    "numBC",
+    {"b","num-barcodes"},
+    "NumBC",
+    "Number of barcodes used; 0 means, don't compute FN rate.",
+    CLI::Option::IntType(0)
+};
+
+const PlainOption MinPPV{
+    "minPPV",
+    {"v","min-ppv"},
+    "MinPPV",
+    "Compute the minimal Barcode Score for a given PPV.",
+    CLI::Option::FloatType(0)
+};
+
 // clang-format on
 }  // namespace OptionNames
 
@@ -106,15 +122,15 @@ static PacBio::CLI::Interface CreateCLI()
 {
     using Option = PacBio::CLI::Option;
 
-    PacBio::CLI::Interface i{"zmw_to_ref", "Maps Record to Reference", "0.0.1"};
+    PacBio::CLI::Interface i{"zmw_to_ref", "Maps Record to Reference", "0.1.0"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
 
     i.AddPositionalArguments({{"bam", "Source BAM", "FILE"}});
 
-    i.AddOptions(
-        {OptionNames::MinLength, OptionNames::Percentiles, OptionNames::Tailed, OptionNames::ZMW});
+    i.AddOptions({OptionNames::MinLength, OptionNames::Percentiles, OptionNames::Tailed,
+                  OptionNames::ZMW, OptionNames::NumBC, OptionNames::MinPPV});
 
     return i;
 }
@@ -208,9 +224,11 @@ static int Runner(const PacBio::CLI::Results& options)
 
     const int minLength = options[OptionNames::MinLength];
     const int nPercentiles = options[OptionNames::Percentiles];
+    const int numBC = options[OptionNames::NumBC];
+    const double minPPV = options[OptionNames::MinPPV];
     const bool tailed = options[OptionNames::Tailed];
     const bool zmwMode = options[OptionNames::ZMW];
-
+    const bool computeMinBQ = minPPV != 0;
     if (minLength < 0) {
         std::cerr << "ERROR: --minLength must be >= 0" << std::endl;
         return EXIT_FAILURE;
@@ -236,6 +254,7 @@ static int Runner(const PacBio::CLI::Results& options)
 
     auto query = BamQuery(options.PositionalArguments().front());
     std::vector<std::pair<int, bool>> observations;
+    std::vector<std::pair<int, bool>> bqs;
     int truePositive = 0;
     int shortCounter = 0;
     std::ofstream report("report");
@@ -243,18 +262,26 @@ static int Runner(const PacBio::CLI::Results& options)
               "BarcodedID,BarcodeFwd,BarcodeRev,BarcodeQuality"
            << std::endl;
     std::map<int, int> bc_tps;
+    for (int i = 1; i <= numBC; ++i)
+        bc_tps[i] = 0;
     std::map<int, int> bc_all;
-    std::map<int, bool> zmwSeen;
+    std::map<int, int> zmw_subreads;
+    std::map<int, int> zmw_subreads_measured;
     for (const auto& r : *query) {
         if (r.Impl().IsSupplementaryAlignment()) continue;
         if (!r.Impl().IsPrimaryAlignment()) continue;
         if (!r.HasBarcodes() || !r.HasBarcodeQuality()) continue;
-        if ((zmwMode && zmwSeen.find(r.HoleNumber()) == zmwSeen.cend()) | !zmwMode) {
-            const int length = r.ReferenceEnd() - r.ReferenceStart();
-            if (length < minLength) {
-                ++shortCounter;
-                continue;
-            }
+
+        const auto zmwNum = r.HoleNumber();
+        const int length = r.ReferenceEnd() - r.ReferenceStart();
+        ++zmw_subreads[zmwNum];
+        if (length < minLength) {
+            continue;
+        }
+
+        if ((zmwMode && zmw_subreads_measured.find(zmwNum) == zmw_subreads_measured.cend()) ||
+            !zmwMode) {
+
             std::stringstream ss(r.ReferenceName());
             std::string item;
             std::vector<std::string> elems;
@@ -276,36 +303,72 @@ static int Runner(const PacBio::CLI::Results& options)
             if (positive) ++bc_tps[idx];
             ++bc_all[idx];
 
-            zmwSeen[r.HoleNumber()] = true;
+            ++zmw_subreads_measured[zmwNum];
 
-            report << r.FullName() << ',' << r.HoleNumber() << ',' << r.ReferenceName() << ','
+            report << r.FullName() << ',' << zmwNum << ',' << r.ReferenceName() << ','
                    << r.ReferenceStart() << ',' << r.ReferenceEnd() << ',' << length << ','
                    << (int)r.MapQuality() << ',' << refName << ',' << bcRef << ','
                    << r.BarcodeForward() << ',' << r.BarcodeReverse() << ','
                    << (int)r.BarcodeQuality() << std::endl;
 
+            if (computeMinBQ) bqs.emplace_back(std::make_pair(r.BarcodeQuality(), positive));
             if (nPercentiles > 1) observations.emplace_back(std::make_pair(length, positive));
         }
     }
 
     double ppvSum = 0.0;
     double ppvCounter = 0;
-    int zmws = 0;
+    int missingBC = 0;
     for (const auto& bc_tp : bc_tps) {
-        std::cerr << 1.0 * bc_tp.second / bc_all.at(bc_tp.first) << " ";
-        ppvSum += 1.0 * bc_tp.second / bc_all.at(bc_tp.first);
-        zmws += bc_all.at(bc_tp.first);
-        ++ppvCounter;
+        if (bc_tp.second > 0) {
+            ppvSum += 1.0 * bc_tp.second / bc_all.at(bc_tp.first);
+            ++ppvCounter;
+        } else {
+            ++missingBC;
+        }
     }
+    const auto numSubreads =
+        std::accumulate(zmw_subreads.cbegin(), zmw_subreads.cend(), 0,
+                        [](const auto& sum, const auto& next) { return sum + next.second; });
+    const auto numSubreadsMeasured =
+        std::accumulate(zmw_subreads_measured.cbegin(), zmw_subreads_measured.cend(), 0,
+                        [](const auto& sum, const auto& next) { return sum + next.second; });
+
+    std::cerr << "#Subreads input        : " << numSubreads << std::endl;
+    std::cerr << "#Subreads BC & >" << std::setw(7) << std::left << std::to_string(minLength) + "bp"
+              << ": " << numSubreadsMeasured << std::endl;
     std::cerr << std::endl;
 
-    std::cerr << "PPV          : " << ppvSum / ppvCounter << std::endl;
-    std::cerr << '>' << std::setw(12) << std::left << std::to_string(minLength) + "bp"
-              << ": " << zmws << std::endl;
-    std::cerr << "Measured reads: " << zmws + shortCounter << std::endl;
+    std::cerr << "#ZMWs input            : " << zmw_subreads.size() << std::endl;
+    std::cerr << "#ZMWs BC & >" << std::setw(11) << std::left << std::to_string(minLength) + "bp"
+              << ": " << zmw_subreads_measured.size() << std::endl;
+
+    std::cerr << std::endl;
+    if (numBC > 0) std::cerr << "Barcode FN rate        : " << 1.0 * missingBC / numBC << std::endl;
+    std::cerr << "PPV                    : " << ppvSum / ppvCounter << std::endl;
+
+    const int nBQs = bqs.size();
+    if (nBQs > 1 && computeMinBQ) {
+        std::sort(bqs.begin(), bqs.end(), [](const auto& a, const auto& b) { return a > b; });
+        double ppv = 1;
+        int i = 0;
+        int pos = 0;
+        int neg = 0;
+        do {
+            if (bqs[i].second)
+                ++pos;
+            else
+                ++neg;
+            ppv = 1.0 * pos / (pos + neg);
+            ++i;
+        } while (ppv > minPPV && i < nBQs);
+        std::cerr << "Min BQ for PPV " << std::setw(8) << std::left << minPPV << ": "
+                  << observations[i].first << std::endl;
+    }
 
     const int nObs = observations.size();
     if (nObs > 1 && nPercentiles > 1) {
+        std::cerr << std::endl;
         std::sort(observations.begin(), observations.end());
         // Second Variant, C = 0 from
         //  https://en.wikipedia.org/wiki/Percentile#The_Linear_Interpolation_Between_Closest_Ranks_method
