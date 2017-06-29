@@ -100,7 +100,7 @@ const PlainOption ZMW{
 };
 
 const PlainOption NumBC{
-    "numBC",
+    "num_bc",
     {"b","num-barcodes"},
     "NumBC",
     "Number of barcodes used; 0 means, don't compute FN rate.",
@@ -108,7 +108,7 @@ const PlainOption NumBC{
 };
 
 const PlainOption MinPPV{
-    "minPPV",
+    "min_ppv",
     {"v","min-ppv"},
     "MinPPV",
     "Compute the minimal Barcode Score for a given PPV.",
