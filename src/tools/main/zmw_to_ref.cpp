@@ -363,7 +363,7 @@ static int Runner(const PacBio::CLI::Results& options)
             ++i;
         } while (ppv > minPPV && i < nBQs);
         std::cerr << "Min BQ for PPV " << std::setw(8) << std::left << minPPV << ": "
-                  << observations[i].first << std::endl;
+                  << bqs[i].first << std::endl;
     }
 
     const int nObs = observations.size();
