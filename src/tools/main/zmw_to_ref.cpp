@@ -269,14 +269,14 @@ static int Runner(const PacBio::CLI::Results& options)
     std::map<int, std::vector<bool>> barcodeHits;
     for (int i = 1; i <= numBC; ++i)
         barcodeHits[i] = std::vector<bool>();
-    std::map<int, int> zmwSubreads;
-    std::map<int, int> zmsSubreadsMeasured;
+    std::map<std::string, int> zmwSubreads;
+    std::map<std::string, int> zmsSubreadsMeasured;
     for (const auto& r : *query) {
         if (r.Impl().IsSupplementaryAlignment()) continue;
         if (!r.Impl().IsPrimaryAlignment()) continue;
         if (!r.HasBarcodes() || !r.HasBarcodeQuality()) continue;
 
-        const auto zmwNum = r.HoleNumber();
+        const auto zmwNum = r.MovieName() + "|" + std::to_string(r.HoleNumber());
         const int length = r.ReferenceEnd() - r.ReferenceStart();
         ++zmwSubreads[zmwNum];
         if (length < minLength) {
