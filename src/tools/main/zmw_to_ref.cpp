@@ -259,7 +259,7 @@ static int Runner(const PacBio::CLI::Results& options)
     };
     auto query = BamQuery(options.PositionalArguments().front());
 
-    std::ofstream report("report");
+    std::ofstream report("report.uhu");
     report << "ReadName,HoleNumber,RefName,RefStart,RefEnd,RefLength,MapQuality,MappedID,"
               "BarcodedID,BarcodeFwd,BarcodeRev,BarcodeQuality"
            << std::endl;
@@ -320,10 +320,14 @@ static int Runner(const PacBio::CLI::Results& options)
     double ppvSum = 0.0;
     double ppvCounter = 0;
     int missingBC = 0;
+    std::ofstream barcodePPvStream("barcode_ppv.uhu");
     for (const auto& bc_hits : barcodeHits) {
         if (std::any_of(bc_hits.second.cbegin(), bc_hits.second.cend(), [](bool x) { return x; })) {
-            ppvSum += 1.0 * std::accumulate(bc_hits.second.cbegin(), bc_hits.second.cend(), 0) /
-                      bc_hits.second.size();
+            double bcPpv = 1.0 *
+                           std::accumulate(bc_hits.second.cbegin(), bc_hits.second.cend(), 0) /
+                           bc_hits.second.size();
+            std::cerr << bc_hits.first << " " << bcPpv << std::endl;
+            ppvSum += bcPpv;
             ++ppvCounter;
         } else {
             ++missingBC;
