@@ -321,12 +321,14 @@ static int Runner(const PacBio::CLI::Results& options)
     double ppvCounter = 0;
     int missingBC = 0;
     std::ofstream barcodePPvStream("barcode_ppv.uhu");
+    barcodePPvStream << "BC COUNTS PPV" << std::endl;
     for (const auto& bc_hits : barcodeHits) {
         if (std::any_of(bc_hits.second.cbegin(), bc_hits.second.cend(), [](bool x) { return x; })) {
             double bcPpv = 1.0 *
                            std::accumulate(bc_hits.second.cbegin(), bc_hits.second.cend(), 0) /
                            bc_hits.second.size();
-            std::cerr << bc_hits.first << " " << bcPpv << std::endl;
+            barcodePPvStream << bc_hits.first << " " << bc_hits.second.size() << " " << bcPpv
+                             << std::endl;
             ppvSum += bcPpv;
             ++ppvCounter;
         } else {
