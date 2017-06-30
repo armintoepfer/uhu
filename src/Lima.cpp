@@ -184,6 +184,7 @@ StripedSmithWaterman::Alignment AlignUtils::Align(StripedSmithWaterman::Aligner&
                                                   const char* bases)
 {
     StripedSmithWaterman::Filter filter;
+    filter.report_cigar = false;
     StripedSmithWaterman::Alignment alignment;
     aligner.Align(bases, filter, &alignment);
     return alignment;
