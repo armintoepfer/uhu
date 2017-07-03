@@ -11,20 +11,19 @@
 #ifndef SSW_H
 #define SSW_H
 
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
 #include <emmintrin.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
-#endif	// __cplusplus
+#endif  // __cplusplus
 
 #define MAPSTR "MIDNSHP=X"
 #ifndef BAM_CIGAR_SHIFT
 #define BAM_CIGAR_SHIFT 4u
 #endif
-
 
 /*!	@typedef	structure of the query profile	*/
 struct _profile;
@@ -44,16 +43,17 @@ typedef struct _profile s_profile;
 					cigar = 0 when the best alignment path is not available
 	@field	cigarLen	length of the cigar string; cigarLen = 0 when the best alignment path is not available
 */
-typedef struct {
-	uint16_t score1;
-	uint16_t score2;
-	int32_t ref_begin1;
-	int32_t ref_end1;
-	int32_t	read_begin1;
-	int32_t read_end1;
-	int32_t ref_end2;
-	uint32_t* cigar;
-	int32_t cigarLen;
+typedef struct
+{
+    uint16_t score1;
+    uint16_t score2;
+    int32_t ref_begin1;
+    int32_t ref_end1;
+    int32_t read_begin1;
+    int32_t read_end1;
+    int32_t ref_end2;
+    uint32_t* cigar;
+    int32_t cigarLen;
 } s_align;
 
 /*!	@function	Create the query profile using the query sequence.
@@ -74,12 +74,13 @@ typedef struct {
 			 -2 -2 -2  2 //T
 			mat is the pointer to the array {2, -2, -2, -2, -2, 2, -2, -2, -2, -2, 2, -2, -2, -2, -2, 2}
 */
-s_profile* ssw_init (const int8_t* read, const int32_t readLen, const int8_t* mat, const int32_t n, const int8_t score_size);
+s_profile* ssw_init(const int8_t* read, const int32_t readLen, const int8_t* mat, const int32_t n,
+                    const int8_t score_size);
 
 /*!	@function	Release the memory allocated by function ssw_init.
 	@param	p	pointer to the query profile structure
 */
-void init_destroy (s_profile* p);
+void init_destroy(s_profile* p);
 
 // @function	ssw alignment.
 /*!	@function	Do Striped Smith-Waterman alignment.
@@ -114,75 +115,40 @@ void init_destroy (s_profile* p);
 			while bit 8 is not, the function will return cigar only when both criteria are fulfilled. All returned positions are
 			0-based coordinate.
 */
-s_align* ssw_align (const s_profile* prof,
-					const int8_t* ref,
-					int32_t refLen,
-					const uint8_t weight_gapO,
-					const uint8_t weight_gapE,
-					const uint8_t flag,
-					const uint16_t filters,
-					const int32_t filterd,
-					const int32_t maskLen);
+s_align* ssw_align(const s_profile* prof, const int8_t* ref, int32_t refLen,
+                   const uint8_t weight_gapO, const uint8_t weight_gapE, const uint8_t flag,
+                   const uint16_t filters, const int32_t filterd, const int32_t maskLen);
 
 /*!	@function	Release the memory allocated by function ssw_align.
 	@param	a	pointer to the alignment result structure
 */
-void align_destroy (s_align* a);
-
-/*! @function:
-     1. Calculate the number of mismatches.
-     2. Modify the cigar string:
-         differentiate matches (=), mismatches(X), and softclip(S).
-	@param	ref_begin1	0-based best alignment beginning position on the reference sequence
-	@param	read_begin1	0-based best alignment beginning position on the read sequence
-	@param	read_end1	0-based best alignment ending position on the read sequence
-	@param	ref	pointer to the reference sequence
-	@param	read	pointer to the read sequence
-	@param	readLen	length of the read
-	@param	cigar	best alignment cigar; stored the same as that in BAM format, high 28 bits: length, low 4 bits: M/I/D (0/1/2)
-	@param	cigarLen	length of the cigar string
- 	@return:
-     The number of mismatches.
-	 The cigar and cigarLen are modified.
-*/
-int32_t mark_mismatch (int32_t ref_begin1,
-					   int32_t read_begin1,
-					   int32_t read_end1,
-					   const int8_t* ref,
-					   const int8_t* read,
-					   int32_t readLen,
-					   uint32_t** cigar, 
-					   int32_t* cigarLen);
+void align_destroy(s_align* a);
 
 /*!	@function		Produce CIGAR 32-bit unsigned integer from CIGAR operation and CIGAR length
 	@param	length		length of CIGAR
 	@param	op_letter	CIGAR operation character ('M', 'I', etc)
 	@return			32-bit unsigned integer, representing encoded CIGAR operation and length
 */
-uint32_t to_cigar_int (uint32_t length, char op_letter);
+uint32_t to_cigar_int(uint32_t length, char op_letter);
 
 /*!	@function		Extract CIGAR operation character from CIGAR 32-bit unsigned integer
 	@param	cigar_int	32-bit unsigned integer, representing encoded CIGAR operation and length
 	@return			CIGAR operation character ('M', 'I', etc)
 */
 //char cigar_int_to_op (uint32_t cigar_int);
-static inline char cigar_int_to_op(uint32_t cigar_int) 
+static inline char cigar_int_to_op(uint32_t cigar_int)
 {
-	return (cigar_int & 0xfU) > 8 ? 'M': MAPSTR[cigar_int & 0xfU];
+    return (cigar_int & 0xfU) > 8 ? 'M' : MAPSTR[cigar_int & 0xfU];
 }
-
 
 /*!	@function		Extract length of a CIGAR operation from CIGAR 32-bit unsigned integer
 	@param	cigar_int	32-bit unsigned integer, representing encoded CIGAR operation and length
 	@return			length of CIGAR operation
 */
 //uint32_t cigar_int_to_len (uint32_t cigar_int);
-static inline uint32_t cigar_int_to_len (uint32_t cigar_int)
-{
-	return cigar_int >> BAM_CIGAR_SHIFT;
-}
+static inline uint32_t cigar_int_to_len(uint32_t cigar_int) { return cigar_int >> BAM_CIGAR_SHIFT; }
 #ifdef __cplusplus
 }
-#endif	// __cplusplus
+#endif  // __cplusplus
 
-#endif	// SSW_H
+#endif  // SSW_H

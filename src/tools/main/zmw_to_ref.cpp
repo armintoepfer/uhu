@@ -299,14 +299,16 @@ static int Runner(const PacBio::CLI::Results& options)
 
             const int idx =
                 tailed ? std::floor(r.BarcodeForward() / 2.0) + 1 : r.BarcodeForward() + 1;
+            if (barcodeMapping.find(idx) == barcodeMapping.cend()) continue;
             const std::string bcRef = barcodeMapping.at(idx);
 
             const bool positive = refName == bcRef;
             barcodeHits[idx].emplace_back(positive);
+            std::cerr << positive << std::endl;
 
             ++zmsSubreadsMeasured[zmwNum];
 
-            report << r.FullName() << ',' << zmwNum << ',' << r.ReferenceName() << ','
+            report << r.FullName() << ',' << r.HoleNumber() << ',' << r.ReferenceName() << ','
                    << r.ReferenceStart() << ',' << r.ReferenceEnd() << ',' << length << ','
                    << (int)r.MapQuality() << ',' << refName << ',' << bcRef << ','
                    << r.BarcodeForward() << ',' << r.BarcodeReverse() << ','

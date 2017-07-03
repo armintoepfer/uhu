@@ -227,7 +227,7 @@ struct TaskResult
     bool PassingFilters;
 };
 
-void WorkerThread(PacBio::Parallel::WorkQueue<TaskResult>& queue,
+void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
                   std::unique_ptr<BAM::BamWriter>& writer, const LimaSettings& settings,
                   const std::string& prefix, Summary& summary, BAM::BamHeader& header)
 {
@@ -243,28 +243,30 @@ void WorkerThread(PacBio::Parallel::WorkQueue<TaskResult>& queue,
 
     std::map<std::pair<uint16_t, uint16_t>, std::vector<BAM::BamRecord>> barcodeToRecords;
 
-    auto LambdaWorker = [&](TaskResult&& p) {
-        if (p.PassingFilters) {
-            const auto leftIdx = p.BHP.Left.Idx;
-            const auto rightIdx = p.BHP.Right.Idx;
-            if (leftIdx == rightIdx)
-                ++summary.SymmetricCounts;
-            else
-                ++summary.AsymmetricCounts;
+    auto LambdaWorker = [&](std::vector<TaskResult>&& ps) {
+        for (auto&& p : ps) {
+            if (p.PassingFilters) {
+                const auto leftIdx = p.BHP.Left.Idx;
+                const auto rightIdx = p.BHP.Right.Idx;
+                if (leftIdx == rightIdx)
+                    ++summary.SymmetricCounts;
+                else
+                    ++summary.AsymmetricCounts;
 
-            if ((settings.KeepSymmetric && leftIdx == rightIdx) || !settings.KeepSymmetric) {
-                if (settings.SplitBam)
-                    for (auto&& r : p.Records)
-                        barcodeToRecords[std::make_pair(leftIdx, rightIdx)].emplace_back(
-                            std::move(r));
-                else if (!settings.NoBam)
-                    for (auto& r : p.Records) {
-                        writer->Write(r);
-                    }
-                if (!settings.NoReports) ++barcodePairCounts[leftIdx][rightIdx];
+                if ((settings.KeepSymmetric && leftIdx == rightIdx) || !settings.KeepSymmetric) {
+                    if (settings.SplitBam)
+                        for (auto&& r : p.Records)
+                            barcodeToRecords[std::make_pair(leftIdx, rightIdx)].emplace_back(
+                                std::move(r));
+                    else if (!settings.NoBam)
+                        for (auto& r : p.Records) {
+                            writer->Write(r);
+                        }
+                    if (!settings.NoReports) ++barcodePairCounts[leftIdx][rightIdx];
+                }
             }
+            if (!settings.NoReports) report << p.Report << std::endl;
         }
-        if (!settings.NoReports) report << p.Report << std::endl;
     };
 
     while (queue.ConsumeWith(LambdaWorker)) {
@@ -315,70 +317,77 @@ void LimaWorkflow::Process(const LimaSettings& settings,
         std::string prefix = AdvancedFileUtils::FilePrefixInfix(datasetPath);
         Summary summary;
         // Individual queue per dataset
-        PacBio::Parallel::WorkQueue<TaskResult> workQueue(settings.NumThreads);
+        PacBio::Parallel::WorkQueue<std::vector<TaskResult>> workQueue(settings.NumThreads);
         std::future<void> workerThread =
             std::async(std::launch::async, WorkerThread, std::ref(workQueue), std::ref(writer),
                        std::ref(settings), std::ref(prefix), std::ref(summary), std::ref(header));
         // Get a query to the underlying BAM files, respecting filters
         auto query = AdvancedFileUtils::BamQuery(datasetPath);
-        auto Submit = [&barcodes, &settings, &summary](std::vector<BAM::BamRecord> records) {
-            TaskResult result{LimaWorkflow::Tag(records, barcodes, settings)};
-            const auto& bhp = result.BHP;
+        auto Submit = [&barcodes, &settings,
+                       &summary](std::vector<std::vector<BAM::BamRecord>> chunk) {
+            std::vector<TaskResult> results;
+            for (const auto& records : chunk) {
+                TaskResult result{LimaWorkflow::Tag(records, barcodes, settings)};
+                const auto& bhp = result.BHP;
 
-            bool aboveMinScore = bhp.MeanScore >= settings.MinScore;
-            bool aboveMinLength = false;
+                bool aboveMinScore = bhp.MeanScore >= settings.MinScore;
+                bool aboveMinLength = false;
 
-            if (bhp.Right.Clips.size() != bhp.Left.Clips.size() ||
-                bhp.Right.Clips.size() != records.size())
-                throw std::runtime_error("Internal error, clips sizes not equal! " +
-                                         records.at(0).FullName() + " " +
-                                         std::to_string(bhp.Left.Clips.size()) + " " +
-                                         std::to_string(bhp.Right.Clips.size()));
-            for (size_t i = 0; i < bhp.Right.Clips.size(); ++i) {
-                if (bhp.Right.Clips.at(i) - bhp.Left.Clips.at(i) > settings.MinLength) {
-                    aboveMinLength = true;
-                    break;
-                }
-            }
-            result.PassingFilters = aboveMinScore && aboveMinLength;
-
-            if (!settings.NoReports)
-                result.Report =
-                    std::to_string(records.at(0).HoleNumber()) + "\t" + std::string(bhp);
-
-            if (aboveMinScore && aboveMinLength) {
-                if (!settings.NoBam) {
-                    for (size_t i = 0; i < records.size(); ++i) {
-                        int clipLeft = bhp.Left.Clips.at(i);
-                        int clipRight = bhp.Right.Clips.at(i);
-                        if (clipRight - clipLeft > settings.MinLength) {
-                            auto r = records[i];
-                            if (r.HasQueryStart()) {
-                                clipLeft += r.QueryStart();
-                                clipRight += r.QueryStart();
-                            }
-                            r.Clip(BAM::ClipType::CLIP_TO_QUERY, clipLeft, clipRight);
-                            r.Barcodes(std::make_pair(bhp.Left.Idx, bhp.Right.Idx));
-                            r.BarcodeQuality(bhp.MeanScore);
-                            result.Records.emplace_back(std::move(r));
-                            ++summary.SubreadAboveMinLength;
-                        } else {
-                            ++summary.SubreadBelowMinLength;
-                        }
+                if (bhp.Right.Clips.size() != bhp.Left.Clips.size() ||
+                    bhp.Right.Clips.size() != records.size())
+                    throw std::runtime_error("Internal error, clips sizes not equal! " +
+                                             records.at(0).FullName() + " " +
+                                             std::to_string(bhp.Left.Clips.size()) + " " +
+                                             std::to_string(bhp.Right.Clips.size()));
+                for (size_t i = 0; i < bhp.Right.Clips.size(); ++i) {
+                    if (bhp.Right.Clips.at(i) - bhp.Left.Clips.at(i) > settings.MinLength) {
+                        aboveMinLength = true;
+                        break;
                     }
                 }
-                ++summary.AboveThresholds;
-            } else if (!aboveMinLength && !aboveMinScore) {
-                ++summary.BelowBoth;
-            } else if (!aboveMinLength) {
-                ++summary.BelowMinLength;
-            } else if (!aboveMinScore) {
-                ++summary.BelowMinScore;
+                result.PassingFilters = aboveMinScore && aboveMinLength;
+
+                if (!settings.NoReports)
+                    result.Report =
+                        std::to_string(records.at(0).HoleNumber()) + "\t" + std::string(bhp);
+
+                if (aboveMinScore && aboveMinLength) {
+                    if (!settings.NoBam) {
+                        for (size_t i = 0; i < records.size(); ++i) {
+                            int clipLeft = bhp.Left.Clips.at(i);
+                            int clipRight = bhp.Right.Clips.at(i);
+                            if (clipRight - clipLeft > settings.MinLength) {
+                                auto r = records[i];
+                                if (r.HasQueryStart()) {
+                                    clipLeft += r.QueryStart();
+                                    clipRight += r.QueryStart();
+                                }
+                                r.Clip(BAM::ClipType::CLIP_TO_QUERY, clipLeft, clipRight);
+                                r.Barcodes(std::make_pair(bhp.Left.Idx, bhp.Right.Idx));
+                                r.BarcodeQuality(bhp.MeanScore);
+                                result.Records.emplace_back(std::move(r));
+                                ++summary.SubreadAboveMinLength;
+                            } else {
+                                ++summary.SubreadBelowMinLength;
+                            }
+                        }
+                    }
+                    ++summary.AboveThresholds;
+                } else if (!aboveMinLength && !aboveMinScore) {
+                    ++summary.BelowBoth;
+                } else if (!aboveMinLength) {
+                    ++summary.BelowMinLength;
+                } else if (!aboveMinScore) {
+                    ++summary.BelowMinScore;
+                }
+                results.emplace_back(std::move(result));
             }
-            return result;
+            return results;
         };
 
         int zmwNum = -1;
+
+        std::vector<std::vector<BAM::BamRecord>> chunk;
         std::vector<BAM::BamRecord> records;
         for (auto& r : *query) {
             if (!writer)
@@ -391,13 +400,17 @@ void LimaWorkflow::Process(const LimaSettings& settings,
             if (zmwNum == -1) {
                 zmwNum = r.HoleNumber();
             } else if (zmwNum != r.HoleNumber()) {
-                if (!records.empty()) workQueue.ProduceWith(Submit, records);
+                if (!records.empty()) chunk.emplace_back(std::move(records));
+                if (chunk.size() == 10) {
+                    workQueue.ProduceWith(Submit, chunk);
+                    chunk.clear();
+                }
                 zmwNum = r.HoleNumber();
-                records.clear();
+                records = std::vector<BAM::BamRecord>();
             }
             records.push_back(r);
         }
-        if (!records.empty()) workQueue.ProduceWith(Submit, records);
+        if (!chunk.empty()) workQueue.ProduceWith(Submit, chunk);
         workQueue.Finalize();
     }
 }
