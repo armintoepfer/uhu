@@ -6,6 +6,3 @@
 	path = third-party/pbbam
 	url = https://github.com/PacificBiosciences/pbbam.git
 	branch = master
-[submodule "third-party/parasail"]
-	path = third-party/parasail
-	url = https://github.com/jeffdaily/parasail.git
