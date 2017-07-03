@@ -84,7 +84,7 @@ const int rightAdapterFlag = static_cast<int>(BAM::LocalContextFlags::ADAPTER_AF
 /// \param  readLength  Length of the read array
 /// \param  scoring     ScoringScheme for DP algorithm
 /// \param  matrix      int32_t* to the SW matrix
-static void SWComputeMatrix(const char* const query, const int32_t M, const char* const read,
+inline void SWComputeMatrix(const char* const query, const int32_t M, const char* const read,
                             const int32_t N, const bool globalInQuery, int32_t*& matrix,
                             const int32_t matchScore = 4, const int32_t mismatchPenalty = -13,
                             const int32_t deletionPenalty = -7, const int32_t insertionPenalty = -7,
@@ -142,7 +142,7 @@ static void SWComputeMatrix(const char* const query, const int32_t M, const char
 /// \param  readLength   length of the read sequence
 ///
 /// \return  A std::pair of the max score and it's position
-static std::pair<int32_t, int32_t> SWLastRowMax(const int32_t* matrix, const int32_t queryLength,
+inline std::pair<int32_t, int32_t> SWLastRowMax(const int32_t* matrix, const int32_t queryLength,
                                                 const int32_t readLength)
 {
     // Calculate the starting position of the last row
@@ -164,7 +164,7 @@ static std::pair<int32_t, int32_t> SWLastRowMax(const int32_t* matrix, const int
     return std::make_pair(maxScore, endPos);
 }
 
-static std::pair<int32_t, int32_t> AlignBarcode(const std::string& bcBases, const char* target,
+inline std::pair<int32_t, int32_t> AlignBarcode(const std::string& bcBases, const char* target,
                                                 const int targetSize, int32_t*& matrix)
 {
     SWComputeMatrix(bcBases.c_str(), bcBases.size() + 1, target, targetSize + 1, false, matrix);
@@ -216,16 +216,16 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
         const auto target = seq.c_str();
         const int targetLength = seq.size();
 
-        if (hasAdapterLeft) {
-            const auto targetSize = std::min(targetLength, barcodeLengthWSpacing);
-            int32_t* matrix = new int32_t[(targetSize + 1) * (barcodeLength + 1)];
+        const auto targetSizeLeft = std::min(targetLength, barcodeLengthWSpacing);
+        if (hasAdapterLeft && targetSizeLeft > 0) {
+            int32_t* matrix = new int32_t[(targetSizeLeft + 1) * (barcodeLength + 1)];
 
             for (size_t i = 0; i < queries.size(); ++i) {
-                auto pair = AlignBarcode(queries[i].Bases, target, targetSize, matrix);
+                auto pair = AlignBarcode(queries[i].Bases, target, targetSizeLeft, matrix);
                 const auto score = NormalizeScore(pair.first);
                 const auto refEnd = pair.second;
 
-                pair = AlignBarcode(queries[i].BasesRC, target, targetSize, matrix);
+                pair = AlignBarcode(queries[i].BasesRC, target, targetSizeLeft, matrix);
                 const auto scoreRC = NormalizeScore(pair.first);
                 const auto refEndRC = pair.second;
 
@@ -251,18 +251,18 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
             }
         }
 
-        if (hasAdapterRight) {
+        int alignerRightBegin = std::max(targetLength - barcodeLengthWSpacing, 0);
+        const auto targetSizeRight = targetLength - alignerRightBegin;
+        if (hasAdapterRight && targetSizeRight) {
             // Set reference as the last few bases
-            int alignerRightBegin = std::max(targetLength - barcodeLengthWSpacing, 0);
-            const auto targetSize = targetLength - alignerRightBegin;
-            int32_t* matrix = new int32_t[(targetSize + 1) * (barcodeLength + 1)];
+            int32_t* matrix = new int32_t[(targetSizeRight + 1) * (barcodeLength + 1)];
             for (size_t i = 0; i < queries.size(); ++i) {
-                auto pair =
-                    AlignBarcode(queries[i].Bases, target + alignerRightBegin, targetSize, matrix);
+                auto pair = AlignBarcode(queries[i].Bases, target + alignerRightBegin,
+                                         targetSizeRight, matrix);
                 const auto score = NormalizeScore(pair.first);
                 const auto refEnd = pair.second;
 
-                pair = AlignBarcode(queries[i].BasesRC, target + alignerRightBegin, targetSize,
+                pair = AlignBarcode(queries[i].BasesRC, target + alignerRightBegin, targetSizeRight,
                                     matrix);
                 const auto scoreRC = NormalizeScore(pair.first);
                 const auto refEndRC = pair.second;
