@@ -58,6 +58,12 @@ namespace PacBio {
 namespace Lima {
 struct LimaSettings;
 
+struct SequenceUtils
+{
+    static char Complement(char base);
+    static std::string ReverseComplement(const std::string& input);
+};
+
 struct AlignerConfig
 {
     AlignerConfig(uint8_t matchScore, uint8_t mismatchPenalty, uint8_t gapOpenPenalty,
@@ -77,9 +83,13 @@ struct AlignerConfig
 
 struct Barcode
 {
-    Barcode(const std::string& name, const std::string& bases) : Name(name), Bases(bases) {}
+    Barcode(const std::string& name, const std::string& bases)
+        : Name(name), Bases(bases), BasesRC(SequenceUtils::ReverseComplement(bases))
+    {
+    }
     std::string Name;
     std::string Bases;
+    std::string BasesRC;
 };
 
 struct BarcodeHit
@@ -135,12 +145,6 @@ struct Summary
     std::atomic_int SubreadAboveMinLength{0};
 
     operator std::string() const;
-};
-
-struct SequenceUtils
-{
-    static char Complement(char base);
-    static std::string ReverseComplement(const std::string& input);
 };
 
 struct AdvancedFileUtils

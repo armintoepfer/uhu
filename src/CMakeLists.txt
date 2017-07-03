@@ -69,7 +69,7 @@ if (UHU_build_bin)
         ${UHU_TOOLS_CPP}
     )
 
-    target_link_libraries(uhutools uhu)
+    target_link_libraries(uhutools uhu parasail)
 
     set_target_properties(uhutools PROPERTIES COMPILE_FLAGS ${LOCAL_COMPILE_FLAGS})
     if (LOCAL_LINK_FLAGS)

@@ -47,6 +47,7 @@
 #include <string>
 #include <vector>
 
+#include <parasail.h>
 #include <ssw_cpp.h>
 
 #include <pbcopper/cli/CLI.h>
@@ -73,6 +74,100 @@ namespace Lima {
 namespace {
 const int leftAdapterFlag = static_cast<int>(BAM::LocalContextFlags::ADAPTER_BEFORE);
 const int rightAdapterFlag = static_cast<int>(BAM::LocalContextFlags::ADAPTER_AFTER);
+}
+
+/// Fills out a supplied SW matrix.
+/// \param  query       char* to the query
+/// \param  queryLength Length of the query array
+/// \param  read        char* to the read
+/// \param  readLength  Length of the read array
+/// \param  scoring     ScoringScheme for DP algorithm
+/// \param  matrix      int32_t* to the SW matrix
+static void SWComputeMatrix(const char* const query, const int32_t M, const char* const read,
+                            const int32_t N, const bool globalInQuery, int32_t*& matrix,
+                            const int32_t matchScore = 4, const int32_t mismatchPenalty = -13,
+                            const int32_t deletionPenalty = -7, const int32_t insertionPenalty = -7,
+                            const int32_t branchPenalty = -4) noexcept
+{
+    matrix[0] = 0;
+
+    if (globalInQuery)
+        for (int32_t i = 1; i < M; ++i)
+            matrix[i * N] = i * deletionPenalty;
+    else
+        for (int32_t i = 1; i < M; ++i)
+            matrix[i * N] = 0;
+
+    for (int32_t j = 1; j < N; ++j)
+        matrix[j] = 0;
+
+    char iQuery;
+    char iBeforeQuery;
+    int32_t mismatchDelta = matchScore - mismatchPenalty;
+    int32_t insertionDelta = branchPenalty - insertionPenalty;
+    for (int32_t i = 1; __builtin_expect(i < M, 1); ++i) {
+        iQuery = query[i];
+        iBeforeQuery = query[i - 1];
+        if (__builtin_expect(i < M - 1, 1)) {
+            for (int32_t j = 1; __builtin_expect(j < N, 1); ++j) {
+                // branch = match && read[j - 2] == read[j - 1];
+                int32_t a = matrix[(i - 1) * N + j - 1] + matchScore;
+                int32_t b = matrix[i * N + j - 1] + branchPenalty;
+                int32_t c = matrix[(i - 1) * N + j] + deletionPenalty;
+                if (read[j - 1] != iBeforeQuery) a -= mismatchDelta;
+                if (read[j - 1] != iQuery) b -= insertionDelta;
+                matrix[i * N + j] =
+                    std::max(a, std::max(b, c));  //(a > b) ? ((a > c) ? a : c) : ((c > b) ? c : b);
+            }
+        } else {
+            for (int32_t j = 1; __builtin_expect(j < N, 1); ++j) {
+                // branch = match && read[j - 2] == read[j - 1];
+                int32_t a = matrix[(i - 1) * N + j - 1] + matchScore;
+                int32_t b = matrix[i * N + j - 1] + insertionPenalty;
+                int32_t c = matrix[(i - 1) * N + j] + deletionPenalty;
+                if (read[j - 1] != iBeforeQuery) a -= mismatchDelta;
+                matrix[i * N + j] = std::max(a, std::max(b, c));
+            }
+        }
+    }
+}
+
+/// Traverse the last row of an SW matrix (i.e. representing
+///     alignments terminating with the last base of the query
+///     sequence) and return the max score and it's position
+///
+/// \param  matrix       pointer to SW matrix
+/// \param  queryLength  length of the query sequence
+/// \param  readLength   length of the read sequence
+///
+/// \return  A std::pair of the max score and it's position
+static std::pair<int32_t, int32_t> SWLastRowMax(const int32_t* matrix, const int32_t queryLength,
+                                                const int32_t readLength)
+{
+    // Calculate the starting position of the last row
+    const int32_t M = queryLength + 1;
+    const int32_t N = readLength + 1;
+    const int32_t beginLastRow = (M - 1) * N;
+
+    // Find maximal score in last row and it's position
+    int32_t maxScore = -1;
+    int32_t endPos = 0;
+    for (int32_t j = 0; j < N; ++j) {
+        if (matrix[beginLastRow + j] > maxScore) {
+            maxScore = matrix[beginLastRow + j];
+            endPos = j;
+        }
+    }
+
+    // Return the maximum score and position as a pair
+    return std::make_pair(maxScore, endPos);
+}
+
+static std::pair<int32_t, int32_t> AlignBarcode(const std::string& bcBases, const char* target,
+                                                const int targetSize, int32_t*& matrix)
+{
+    SWComputeMatrix(bcBases.c_str(), bcBases.size() + 1, target, targetSize + 1, false, matrix);
+    return SWLastRowMax(matrix, bcBases.size(), targetSize);
 }
 
 BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
@@ -116,38 +211,35 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
             ((hasCX && (r.LocalContextFlags() & rightAdapterFlag)) || !hasCX);
         const bool isFull = hasAdapterLeft && hasAdapterRight;
 
-        const auto target = r.Sequence();
-        const int targetLength = target.size();
-
-        // Prepare one aligner for each target region
-        StripedSmithWaterman::Aligner alignerLeft(settings.MatchScore, settings.MismatchPenalty,
-                                                  settings.GapOpenPenalty, settings.GapExtPenalty);
-        StripedSmithWaterman::Aligner alignerRight(settings.MatchScore, settings.MismatchPenalty,
-                                                   settings.GapOpenPenalty, settings.GapExtPenalty);
+        const auto target = r.Sequence().c_str();
+        const int targetLength = r.Sequence().size();
 
         if (hasAdapterLeft) {
-            // Set reference as the first few bases
-            alignerLeft.SetReferenceSequence(target.c_str(),
-                                             std::min(targetLength, barcodeLengthWSpacing));
-            for (size_t i = 0; i < queries.size(); ++i) {
-                const auto align = AlignUtils::AlignForward(alignerLeft, queries[i]);
-                const auto score = NormalizeScore(align.sw_score);
+            const auto targetSize = std::min(targetLength, barcodeLengthWSpacing);
+            int32_t* matrix = new int32_t[(targetSize + 1) * (barcodeLength + 1)];
 
-                const auto alignRC = AlignUtils::AlignRC(alignerLeft, queries[i]);
-                const auto scoreRC = NormalizeScore(alignRC.sw_score);
+            for (size_t i = 0; i < queries.size(); ++i) {
+                auto pair = AlignBarcode(queries[i].Bases, target, targetSize, matrix);
+                const auto score = NormalizeScore(pair.first);
+                const auto refEnd = pair.second;
+
+                pair = AlignBarcode(queries[i].BasesRC, target, targetSize, matrix);
+                const auto scoreRC = NormalizeScore(pair.first);
+                const auto refEndRC = pair.second;
 
                 if ((maxScoring && isFull && counterFullLeft < maxScoredReads) || !maxScoring) {
                     if (score > scoreRC)
-                        left[i].AddWithSumScore(score, align.ref_end);
+                        left[i].AddWithSumScore(score, refEnd);
                     else
-                        left[i].AddWithSumScore(scoreRC, alignRC.ref_end);
+                        left[i].AddWithSumScore(scoreRC, refEndRC);
                 } else {
                     if (score > scoreRC)
-                        left[i].Add(score, align.ref_end);
+                        left[i].Add(score, refEnd);
                     else
-                        left[i].Add(scoreRC, alignRC.ref_end);
+                        left[i].Add(scoreRC, refEndRC);
                 }
             }
+            delete[] matrix;
             if ((maxScoring && isFull && counterFullLeft < maxScoredReads) || !maxScoring)
                 ++counterFullLeft;
             ++counterLeft;
@@ -160,27 +252,32 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
         if (hasAdapterRight) {
             // Set reference as the last few bases
             int alignerRightBegin = std::max(targetLength - barcodeLengthWSpacing, 0);
-            alignerRight.SetReferenceSequence(target.c_str() + alignerRightBegin,
-                                              targetLength - alignerRightBegin);
+            const auto targetSize = targetLength - alignerRightBegin;
+            int32_t* matrix = new int32_t[(targetSize + 1) * (barcodeLength + 1)];
             for (size_t i = 0; i < queries.size(); ++i) {
-                const auto align = AlignUtils::AlignForward(alignerRight, queries[i]);
-                const auto score = NormalizeScore(align.sw_score);
+                auto pair =
+                    AlignBarcode(queries[i].Bases, target + alignerRightBegin, targetSize, matrix);
+                const auto score = NormalizeScore(pair.first);
+                const auto refEnd = pair.second;
 
-                const auto alignRC = AlignUtils::AlignRC(alignerRight, queries[i]);
-                const auto scoreRC = NormalizeScore(alignRC.sw_score);
+                pair = AlignBarcode(queries[i].BasesRC, target + alignerRightBegin, targetSize,
+                                    matrix);
+                const auto scoreRC = NormalizeScore(pair.first);
+                const auto refEndRC = pair.second;
 
                 if ((maxScoring && isFull && counterFullRight < maxScoredReads) || !maxScoring) {
                     if (score > scoreRC)
-                        right[i].AddWithSumScore(score, alignerRightBegin + align.ref_begin);
+                        right[i].AddWithSumScore(score, alignerRightBegin + refEnd);
                     else
-                        right[i].AddWithSumScore(scoreRC, alignerRightBegin + alignRC.ref_begin);
+                        right[i].AddWithSumScore(scoreRC, alignerRightBegin + refEndRC);
                 } else {
                     if (score > scoreRC)
-                        right[i].Add(score, alignerRightBegin + align.ref_begin);
+                        right[i].Add(score, alignerRightBegin + refEnd);
                     else
-                        right[i].Add(scoreRC, alignerRightBegin + alignRC.ref_begin);
+                        right[i].Add(scoreRC, alignerRightBegin + refEndRC);
                 }
             }
+            delete[] matrix;
             if ((maxScoring && isFull && counterFullRight < maxScoredReads) || !maxScoring)
                 ++counterFullRight;
             ++counterRight;
