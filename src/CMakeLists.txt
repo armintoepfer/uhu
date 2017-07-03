@@ -10,14 +10,10 @@ file(GLOB UHU_CPP        "*.cpp")
 # get sources for src/tools
 file(GLOB UHU_TOOLS_CPP  "tools/*.cpp")
 
-# ssw C library cannot be build with ${LOCAL_COMPILE_FLAGS} since it's C
-add_library(ssw STATIC ${ssw_INCLUDE_DIRS}/ssw.c)
-
 # add main library including everything
 add_library(uhu STATIC
     ${UHU_HEADER}
     ${UHU_HIDDEN_HEADER}
-    ${ssw_INCLUDE_DIRS}/ssw_cpp.cpp
     ${UHU_CPP}
 )
 
@@ -26,7 +22,6 @@ target_link_libraries(uhu
     ${HTSLIB_LIBRARIES}
     ${PacBioBAM_LIBRARIES}
     ${pbcopper_LIBRARIES}
-    ssw
 )
 
 target_include_directories(uhu PUBLIC
@@ -36,7 +31,6 @@ target_include_directories(uhu PUBLIC
     ${HTSLIB_INCLUDE_DIRS}
     ${PacBioBAM_INCLUDE_DIRS}
     ${pbcopper_INCLUDE_DIRS}
-    ${ssw_INCLUDE_DIRS}
 )
 
 set_target_properties(uhu PROPERTIES COMPILE_FLAGS ${LOCAL_COMPILE_FLAGS})
@@ -69,7 +63,7 @@ if (UHU_build_bin)
         ${UHU_TOOLS_CPP}
     )
 
-    target_link_libraries(uhutools uhu parasail)
+    target_link_libraries(uhutools uhu)
 
     set_target_properties(uhutools PROPERTIES COMPILE_FLAGS ${LOCAL_COMPILE_FLAGS})
     if (LOCAL_LINK_FLAGS)

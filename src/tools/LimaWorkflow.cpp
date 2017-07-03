@@ -48,9 +48,6 @@
 #include <string>
 #include <vector>
 
-#include <parasail.h>
-#include <ssw_cpp.h>
-
 #include <pbcopper/cli/CLI.h>
 #include <pbcopper/utility/FileUtils.h>
 
@@ -75,100 +72,6 @@ namespace Lima {
 namespace {
 const int leftAdapterFlag = static_cast<int>(BAM::LocalContextFlags::ADAPTER_BEFORE);
 const int rightAdapterFlag = static_cast<int>(BAM::LocalContextFlags::ADAPTER_AFTER);
-}
-
-/// Fills out a supplied SW matrix.
-/// \param  query       char* to the query
-/// \param  queryLength Length of the query array
-/// \param  read        char* to the read
-/// \param  readLength  Length of the read array
-/// \param  scoring     ScoringScheme for DP algorithm
-/// \param  matrix      int32_t* to the SW matrix
-inline void SWComputeMatrix(const char* const query, const int32_t M, const char* const read,
-                            const int32_t N, const bool globalInQuery, int32_t*& matrix,
-                            const int32_t matchScore = 4, const int32_t mismatchPenalty = -13,
-                            const int32_t deletionPenalty = -7, const int32_t insertionPenalty = -7,
-                            const int32_t branchPenalty = -4) noexcept
-{
-    matrix[0] = 0;
-
-    if (globalInQuery)
-        for (int32_t i = 1; i < M; ++i)
-            matrix[i * N] = i * deletionPenalty;
-    else
-        for (int32_t i = 1; i < M; ++i)
-            matrix[i * N] = 0;
-
-    for (int32_t j = 1; j < N; ++j)
-        matrix[j] = 0;
-
-    char iQuery;
-    char iBeforeQuery;
-    int32_t mismatchDelta = matchScore - mismatchPenalty;
-    int32_t insertionDelta = branchPenalty - insertionPenalty;
-    for (int32_t i = 1; __builtin_expect(i < M, 1); ++i) {
-        iQuery = query[i];
-        iBeforeQuery = query[i - 1];
-        if (__builtin_expect(i < M - 1, 1)) {
-            for (int32_t j = 1; __builtin_expect(j < N, 1); ++j) {
-                // branch = match && read[j - 2] == read[j - 1];
-                int32_t a = matrix[(i - 1) * N + j - 1] + matchScore;
-                int32_t b = matrix[i * N + j - 1] + branchPenalty;
-                int32_t c = matrix[(i - 1) * N + j] + deletionPenalty;
-                if (read[j - 1] != iBeforeQuery) a -= mismatchDelta;
-                if (read[j - 1] != iQuery) b -= insertionDelta;
-                matrix[i * N + j] =
-                    std::max(a, std::max(b, c));  //(a > b) ? ((a > c) ? a : c) : ((c > b) ? c : b);
-            }
-        } else {
-            for (int32_t j = 1; __builtin_expect(j < N, 1); ++j) {
-                // branch = match && read[j - 2] == read[j - 1];
-                int32_t a = matrix[(i - 1) * N + j - 1] + matchScore;
-                int32_t b = matrix[i * N + j - 1] + insertionPenalty;
-                int32_t c = matrix[(i - 1) * N + j] + deletionPenalty;
-                if (read[j - 1] != iBeforeQuery) a -= mismatchDelta;
-                matrix[i * N + j] = std::max(a, std::max(b, c));
-            }
-        }
-    }
-}
-
-/// Traverse the last row of an SW matrix (i.e. representing
-///     alignments terminating with the last base of the query
-///     sequence) and return the max score and it's position
-///
-/// \param  matrix       pointer to SW matrix
-/// \param  queryLength  length of the query sequence
-/// \param  readLength   length of the read sequence
-///
-/// \return  A std::pair of the max score and it's position
-inline std::pair<int32_t, int32_t> SWLastRowMax(const int32_t* matrix, const int32_t queryLength,
-                                                const int32_t readLength)
-{
-    // Calculate the starting position of the last row
-    const int32_t M = queryLength + 1;
-    const int32_t N = readLength + 1;
-    const int32_t beginLastRow = (M - 1) * N;
-
-    // Find maximal score in last row and it's position
-    int32_t maxScore = -1;
-    int32_t endPos = 0;
-    for (int32_t j = 0; j < N; ++j) {
-        if (matrix[beginLastRow + j] > maxScore) {
-            maxScore = matrix[beginLastRow + j];
-            endPos = j;
-        }
-    }
-
-    // Return the maximum score and position as a pair
-    return std::make_pair(maxScore, endPos);
-}
-
-inline std::pair<int32_t, int32_t> AlignBarcode(const std::string& bcBases, const char* target,
-                                                const int targetSize, int32_t*& matrix)
-{
-    SWComputeMatrix(bcBases.c_str(), bcBases.size() + 1, target, targetSize + 1, false, matrix);
-    return SWLastRowMax(matrix, bcBases.size(), targetSize);
 }
 
 BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
@@ -203,6 +106,7 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
     const int maxScoredReads = settings.MaxScoredReads;
     const bool maxScoring = settings.MaxScoredReads > 0;
 
+    std::vector<int32_t> matrix;
     for (const auto& r : records) {
         // Activate if there is no context flag or if the left/right adapter is present
         const bool hasCX = r.HasLocalContextFlags();
@@ -218,14 +122,13 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
 
         const auto targetSizeLeft = std::min(targetLength, barcodeLengthWSpacing);
         if (hasAdapterLeft && targetSizeLeft > 0) {
-            int32_t* matrix = new int32_t[(targetSizeLeft + 1) * (barcodeLength + 1)];
-
+            matrix.resize((targetSizeLeft + 1) * (barcodeLength + 1));
             for (size_t i = 0; i < queries.size(); ++i) {
-                auto pair = AlignBarcode(queries[i].Bases, target, targetSizeLeft, matrix);
+                auto pair = AlignUtils::Align(queries[i].Bases, target, targetSizeLeft, matrix);
                 const auto score = NormalizeScore(pair.first);
                 const auto refEnd = pair.second;
 
-                pair = AlignBarcode(queries[i].BasesRC, target, targetSizeLeft, matrix);
+                pair = AlignUtils::Align(queries[i].BasesRC, target, targetSizeLeft, matrix);
                 const auto scoreRC = NormalizeScore(pair.first);
                 const auto refEndRC = pair.second;
 
@@ -241,7 +144,6 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                         left[i].Add(scoreRC, refEndRC);
                 }
             }
-            delete[] matrix;
             if ((maxScoring && isFull && counterFullLeft < maxScoredReads) || !maxScoring)
                 ++counterFullLeft;
             ++counterLeft;
@@ -255,15 +157,15 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
         const auto targetSizeRight = targetLength - alignerRightBegin;
         if (hasAdapterRight && targetSizeRight) {
             // Set reference as the last few bases
-            int32_t* matrix = new int32_t[(targetSizeRight + 1) * (barcodeLength + 1)];
+            matrix.resize((targetSizeRight + 1) * (barcodeLength + 1));
             for (size_t i = 0; i < queries.size(); ++i) {
-                auto pair = AlignBarcode(queries[i].Bases, target + alignerRightBegin,
-                                         targetSizeRight, matrix);
+                auto pair = AlignUtils::Align(queries[i].Bases, target + alignerRightBegin,
+                                              targetSizeRight, matrix);
                 const auto score = NormalizeScore(pair.first);
                 const auto refEnd = pair.second;
 
-                pair = AlignBarcode(queries[i].BasesRC, target + alignerRightBegin, targetSizeRight,
-                                    matrix);
+                pair = AlignUtils::Align(queries[i].BasesRC, target + alignerRightBegin,
+                                         targetSizeRight, matrix);
                 const auto scoreRC = NormalizeScore(pair.first);
                 const auto refEndRC = pair.second;
 
@@ -279,7 +181,6 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                         right[i].Add(scoreRC, alignerRightBegin + refEndRC);
                 }
             }
-            delete[] matrix;
             if ((maxScoring && isFull && counterFullRight < maxScoredReads) || !maxScoring)
                 ++counterFullRight;
             ++counterRight;
@@ -491,6 +392,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
 
         std::vector<std::vector<BAM::BamRecord>> chunk;
         std::vector<BAM::BamRecord> records;
+        int chunkNum = 0;
         for (auto& r : *query) {
             if (!writer)
                 if (!settings.NoBam && !settings.SplitBam)
@@ -503,20 +405,21 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                 zmwNum = r.HoleNumber();
             } else if (zmwNum != r.HoleNumber()) {
                 if (!records.empty()) chunk.emplace_back(std::move(records));
-                if (chunk.size() == settings.Chunks) {
+                if (static_cast<int>(chunk.size()) >= settings.Chunks) {
                     workQueue.ProduceWith(Submit, chunk);
                     chunk.clear();
                 }
                 zmwNum = r.HoleNumber();
                 records = std::vector<BAM::BamRecord>();
+                ++chunkNum;
             }
             records.push_back(r);
         }
         if (!chunk.empty()) workQueue.ProduceWith(Submit, chunk);
         workQueue.Finalize();
-        while (threadCount > 0) {
+        while (threadCount > 0)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
+        workerThread.wait();
     }
 }
 

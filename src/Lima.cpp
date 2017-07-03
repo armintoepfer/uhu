@@ -47,8 +47,6 @@
 #include <string>
 #include <vector>
 
-#include <ssw_cpp.h>
-
 #include <pbcopper/cli/CLI.h>
 #include <pbcopper/utility/FileUtils.h>
 
@@ -180,28 +178,83 @@ std::unique_ptr<BAM::internal::IQuery> AdvancedFileUtils::BamQuery(const std::st
 };
 
 // ## AlignUtils ##
-StripedSmithWaterman::Alignment AlignUtils::Align(StripedSmithWaterman::Aligner& aligner,
-                                                  const char* bases)
+std::pair<int32_t, int32_t> AlignUtils::Align(const std::string& bcBases, const char* target,
+                                              const int targetSize,
+                                              std::vector<int32_t>& matrix) noexcept
 {
-    StripedSmithWaterman::Filter filter;
-    filter.report_cigar = false;
-    StripedSmithWaterman::Alignment alignment;
-    aligner.Align(bases, filter, &alignment);
-    return alignment;
-};
+    SWComputeMatrix(bcBases.c_str(), bcBases.size() + 1, target, targetSize + 1, false, matrix);
+    return SWLastRowMax(matrix, bcBases.size(), targetSize);
+}
 
-StripedSmithWaterman::Alignment AlignUtils::AlignForward(StripedSmithWaterman::Aligner& aligner,
-                                                         const Barcode& query)
+std::pair<int32_t, int32_t> AlignUtils::SWLastRowMax(const std::vector<int32_t>& matrix,
+                                                     const int32_t queryLength,
+                                                     const int32_t readLength) noexcept
 {
-    return Align(aligner, query.Bases.c_str());
-};
+    // Calculate the starting position of the last row
+    const int32_t M = queryLength + 1;
+    const int32_t N = readLength + 1;
+    const int32_t beginLastRow = (M - 1) * N;
 
-StripedSmithWaterman::Alignment AlignUtils::AlignRC(StripedSmithWaterman::Aligner& aligner,
-                                                    const Barcode& query)
+    // Find maximal score in last row and it's position
+    int32_t maxScore = -1;
+    int32_t endPos = 0;
+    for (int32_t j = 0; j < N; ++j) {
+        if (matrix[beginLastRow + j] > maxScore) {
+            maxScore = matrix[beginLastRow + j];
+            endPos = j;
+        }
+    }
+
+    // Return the maximum score and position as a pair
+    return std::make_pair(maxScore, endPos);
+}
+
+void AlignUtils::SWComputeMatrix(const char* const query, const int32_t M, const char* const read,
+                                 const int32_t N, const bool globalInQuery,
+                                 std::vector<int32_t>& matrix, const int32_t matchScore,
+                                 const int32_t mismatchPenalty, const int32_t deletionPenalty,
+                                 const int32_t insertionPenalty,
+                                 const int32_t branchPenalty) noexcept
 {
-    auto revComp = SequenceUtils::ReverseComplement(query.Bases);
-    return Align(aligner, revComp.c_str());
-};
+    matrix[0] = 0;
+
+    if (globalInQuery)
+        for (int32_t i = 1; i < M; ++i)
+            matrix[i * N] = i * deletionPenalty;
+    else
+        for (int32_t i = 1; i < M; ++i)
+            matrix[i * N] = 0;
+
+    for (int32_t j = 1; j < N; ++j)
+        matrix[j] = 0;
+
+    char iQuery;
+    char iBeforeQuery;
+    int32_t mismatchDelta = matchScore - mismatchPenalty;
+    int32_t insertionDelta = branchPenalty - insertionPenalty;
+    for (int32_t i = 1; __builtin_expect(i < M, 1); ++i) {
+        iQuery = query[i];
+        iBeforeQuery = query[i - 1];
+        if (__builtin_expect(i < M - 1, 1)) {
+            for (int32_t j = 1; __builtin_expect(j < N, 1); ++j) {
+                int32_t a = matrix[(i - 1) * N + j - 1] + matchScore;
+                int32_t b = matrix[i * N + j - 1] + branchPenalty;
+                const int32_t c = matrix[(i - 1) * N + j] + deletionPenalty;
+                if (read[j - 1] != iBeforeQuery) a -= mismatchDelta;
+                if (read[j - 1] != iQuery) b -= insertionDelta;
+                matrix[i * N + j] = std::max(a, std::max(b, c));
+            }
+        } else {
+            for (int32_t j = 1; __builtin_expect(j < N, 1); ++j) {
+                int32_t a = matrix[(i - 1) * N + j - 1] + matchScore;
+                int32_t b = matrix[i * N + j - 1] + insertionPenalty;
+                const int32_t c = matrix[(i - 1) * N + j] + deletionPenalty;
+                if (read[j - 1] != iBeforeQuery) a -= mismatchDelta;
+                matrix[i * N + j] = std::max(a, std::max(b, c));
+            }
+        }
+    }
+}
 
 // ## Summary ##
 Summary::operator std::string() const
