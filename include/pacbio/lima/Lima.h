@@ -155,14 +155,37 @@ struct AdvancedFileUtils
 
 struct AlignUtils
 {
-    static StripedSmithWaterman::Alignment Align(StripedSmithWaterman::Aligner& aligner,
-                                                 const char* bases);
+    /// Fills out a supplied SW matrix.
+    /// \param  query       char* to the query
+    /// \param  queryLength Length of the query array
+    /// \param  read        char* to the read
+    /// \param  readLength  Length of the read array
+    /// \param  scoring     ScoringScheme for DP algorithm
+    /// \param  matrix      int32_t* to the SW matrix
+    static void SWComputeMatrix(const char* const query, const int32_t M, const char* const read,
+                                const int32_t N, const bool globalInQuery,
+                                std::vector<int32_t>& matrix, const int32_t matchScore = 4,
+                                const int32_t mismatchPenalty = -13,
+                                const int32_t deletionPenalty = -7,
+                                const int32_t insertionPenalty = -7,
+                                const int32_t branchPenalty = -4) noexcept;
 
-    static StripedSmithWaterman::Alignment AlignForward(StripedSmithWaterman::Aligner& aligner,
-                                                        const Barcode& query);
+    /// Traverse the last row of an SW matrix (i.e. representing
+    ///     alignments terminating with the last base of the query
+    ///     sequence) and return the max score and it's position
+    ///
+    /// \param  matrix       pointer to SW matrix
+    /// \param  queryLength  length of the query sequence
+    /// \param  readLength   length of the read sequence
+    ///
+    /// \return  A std::pair of the max score and it's position
+    static std::pair<int32_t, int32_t> SWLastRowMax(const std::vector<int32_t>& matrix,
+                                                    const int32_t queryLength,
+                                                    const int32_t readLength) noexcept;
 
-    static StripedSmithWaterman::Alignment AlignRC(StripedSmithWaterman::Aligner& aligner,
-                                                   const Barcode& query);
+    static std::pair<int32_t, int32_t> Align(const std::string& bcBases, const char* target,
+                                             const int targetSize,
+                                             std::vector<int32_t>& matrix) noexcept;
 };
 }
 }
