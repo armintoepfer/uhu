@@ -162,6 +162,13 @@ const PlainOption NumThreads{
     "Number of threads to use, 0 means autodetection.",
     CLI::Option::IntType(0)
 };
+const PlainOption Chunks{
+    "Chunks",
+    { "c", "chunk-size" },
+    "Size of Chunks",
+    "Size of Chunks.",
+    CLI::Option::IntType(10)
+};
 // clang-format on
 }  // namespace OptionNames
 
@@ -180,6 +187,7 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     , NoReports(options[OptionNames::NoReports])
     , SplitBam(options[OptionNames::SplitBam])
     , MaxScoredReads(options[OptionNames::MaxScoredReads])
+    , Chunks(options[OptionNames::Chunks])
 {
     if (SplitBam && NoBam)
         throw std::runtime_error("Options --split-bam and --no-bam are mutually exclusive!");
@@ -245,7 +253,8 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
         OptionNames::WindowSizeMult,
         OptionNames::MinLength,
         OptionNames::MinScore,
-        OptionNames::MaxScoredReads
+        OptionNames::MaxScoredReads,
+        OptionNames::Chunks
     });
 
     i.AddGroup("Aligner Configuration",

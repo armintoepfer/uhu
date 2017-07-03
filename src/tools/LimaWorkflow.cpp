@@ -212,8 +212,9 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
             ((hasCX && (r.LocalContextFlags() & rightAdapterFlag)) || !hasCX);
         const bool isFull = hasAdapterLeft && hasAdapterRight;
 
-        const auto target = r.Sequence().c_str();
-        const int targetLength = r.Sequence().size();
+        const auto seq = r.Sequence();
+        const auto target = seq.c_str();
+        const int targetLength = seq.size();
 
         if (hasAdapterLeft) {
             const auto targetSize = std::min(targetLength, barcodeLengthWSpacing);
@@ -502,7 +503,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                 zmwNum = r.HoleNumber();
             } else if (zmwNum != r.HoleNumber()) {
                 if (!records.empty()) chunk.emplace_back(std::move(records));
-                if (chunk.size() == 1) {
+                if (chunk.size() == settings.Chunks) {
                     workQueue.ProduceWith(Submit, chunk);
                     chunk.clear();
                 }
