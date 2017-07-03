@@ -43,3 +43,5 @@ endif()
 
 # Complete-Striped-Smith-Waterman-Library
 set(ssw_INCLUDE_DIRS ${UHU_ThirdPartyDir}/cssw)
+
+add_subdirectory(${UHU_ThirdPartyDir}/parasail external/parasail/build)
