@@ -36,6 +36,7 @@
 // Author: Armin Töpfer
 
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <fstream>
 #include <iostream>
@@ -410,6 +411,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
     // Treat every dataset as an individual entity
     for (const auto& datasetPath : datasetPaths) {
         writer.reset(nullptr);
+        std::atomic_int threadCount(0);
 
         std::string prefix = AdvancedFileUtils::FilePrefixInfix(datasetPath);
         Summary summary;
@@ -420,8 +422,9 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                        std::ref(settings), std::ref(prefix), std::ref(summary), std::ref(header));
         // Get a query to the underlying BAM files, respecting filters
         auto query = AdvancedFileUtils::BamQuery(datasetPath);
-        auto Submit = [&barcodes, &settings,
-                       &summary](std::vector<std::vector<BAM::BamRecord>> chunk) {
+        auto Submit = [&barcodes, &settings, &summary,
+                       &threadCount](std::vector<std::vector<BAM::BamRecord>> chunk) {
+            ++threadCount;
             std::vector<TaskResult> results;
             for (const auto& records : chunk) {
                 TaskResult result{LimaWorkflow::Tag(records, barcodes, settings)};
@@ -479,6 +482,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                 }
                 results.emplace_back(std::move(result));
             }
+            --threadCount;
             return results;
         };
 
@@ -498,7 +502,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                 zmwNum = r.HoleNumber();
             } else if (zmwNum != r.HoleNumber()) {
                 if (!records.empty()) chunk.emplace_back(std::move(records));
-                if (chunk.size() == 10) {
+                if (chunk.size() == 1) {
                     workQueue.ProduceWith(Submit, chunk);
                     chunk.clear();
                 }
@@ -509,6 +513,9 @@ void LimaWorkflow::Process(const LimaSettings& settings,
         }
         if (!chunk.empty()) workQueue.ProduceWith(Submit, chunk);
         workQueue.Finalize();
+        while (threadCount > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
     }
 }
 
