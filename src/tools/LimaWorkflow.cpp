@@ -309,8 +309,8 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                            const std::vector<Barcode>& barcodes)
 {
     AlignParameters alignParameters(settings.MatchScore, -settings.MismatchPenalty,
-                                    -settings.GapOpenPenalty, -settings.GapOpenPenalty,
-                                    -settings.MatchScore);
+                                    -settings.DeletionPenalty, -settings.InsertionPenalty,
+                                    -settings.BranchPenalty);
 
     // Single writer for non-split mode
     std::unique_ptr<BAM::BamWriter> writer;
