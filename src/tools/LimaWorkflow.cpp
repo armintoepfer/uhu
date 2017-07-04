@@ -409,7 +409,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
 
             if (zmwNum == -1) {
                 zmwNum = r.HoleNumber();
-            } else if (zmwNum != r.HoleNumber()) {
+            } else if (settings.PerSubread || (!settings.PerSubread && zmwNum != r.HoleNumber())) {
                 if (!records.empty()) chunk.emplace_back(std::move(records));
                 if (static_cast<int>(chunk.size()) >= settings.Chunks) {
                     workQueue.ProduceWith(Submit, chunk);
