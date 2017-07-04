@@ -177,6 +177,13 @@ const PlainOption Chunks{
     "Size of Chunks.",
     CLI::Option::IntType(10)
 };
+const PlainOption PerSubread{
+    "PerSubread",
+    { "p", "per-subread" },
+    "Tag per subread",
+    "Do not tag per ZMW, but per subread.",
+    CLI::Option::BoolType()
+};
 // clang-format on
 }  // namespace OptionNames
 
@@ -197,6 +204,7 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     , SplitBam(options[OptionNames::SplitBam])
     , MaxScoredReads(options[OptionNames::MaxScoredReads])
     , Chunks(options[OptionNames::Chunks])
+    , PerSubread(options[OptionNames::PerSubread])
 {
     if (SplitBam && NoBam)
         throw std::runtime_error("Options --split-bam and --no-bam are mutually exclusive!");
@@ -249,7 +257,7 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     using Task = PacBio::CLI::ToolContract::Task;
 
     PacBio::CLI::Interface i{"lima", "Lima, Demultiplex Barcoded PacBio Data and Clip Barcodes ",
-                             "0.12.0"};
+                             "0.13.0"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
@@ -267,7 +275,8 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
         OptionNames::MinLength,
         OptionNames::MinScore,
         OptionNames::MaxScoredReads,
-        OptionNames::Chunks
+        OptionNames::Chunks,
+        OptionNames::PerSubread
     });
 
     i.AddGroup("Aligner Configuration",
