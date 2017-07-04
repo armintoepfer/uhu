@@ -132,11 +132,11 @@ barcode scores.
 Example: 200 barcodes, asymmetric mode (try each barcode forward and
 reverse-complement), 300,000 CCS reads. On my 2014 iMac with 4 cores + HT:
 
-    3242.43s user 28.80s system 668% cpu 8:09.01 total
+    503.57s user 11.74s system 725% cpu 1:11.01 total
 
-Those 8:09 minutes translate into 1.63 milliseconds per ZMW,
-8.15 microseconds per barcode for both sides aligning forward and reverse-complement,
-and 2 microseconds per alignment. This includes IO.
+Those 8:09 minutes translate into 0.233 milliseconds per ZMW,
+1.16 microseconds per barcode for both sides aligning forward and reverse-complement,
+and 291 nanoseconds per alignment. This includes IO.
 
 ### Is there a way to show the progress?
 No. Please run `wc -l prefix.demux.report` to get the number of processed ZMWs.
