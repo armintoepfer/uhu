@@ -249,7 +249,7 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
     using Task = PacBio::CLI::ToolContract::Task;
 
     PacBio::CLI::Interface i{"lima", "Lima, Demultiplex Barcoded PacBio Data and Clip Barcodes ",
-                             "0.11.0"};
+                             "0.12.0"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
