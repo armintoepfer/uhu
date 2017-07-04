@@ -135,7 +135,7 @@ reverse-complement), 300,000 CCS reads. On my 2014 iMac with 4 cores + HT:
 
     503.57s user 11.74s system 725% cpu 1:11.01 total
 
-Those 8:09 minutes translate into 0.233 milliseconds per ZMW,
+Those 1:11 minutes translate into 0.233 milliseconds per ZMW,
 1.16 microseconds per barcode for both sides aligning forward and reverse-complement,
 and 291 nanoseconds per alignment. This includes IO.
 
