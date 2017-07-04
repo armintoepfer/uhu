@@ -71,10 +71,10 @@ An individual score with `-1` indicates that a leading or trailing adapter is
 missing. This is irrelevant for CCS reads.
 
     $ head prefix.demux.report | column -t
-    ZMW      IndexLeft  IndexRight  MeanScoreLeft  MeanScoreRight  MeanScore  ClipsLeft    ClipsRight           ScoresLeft    ScoresRight
-    4391559  2          2           73             100             87         0,14,15,14  1558,2097,2183,2113  -1,56,82,82   100,100,100,-1
-    4457329  2          2           65             85              75         0,15,18     2772,2174,2402       -1,54,76      87,82,-1
-    4522785  3          3           86             87              87         0,15,15,14  2016,2176,2198,2119  -1,100,76,82  73,100,89,-1
+    ZMW      IndexLeft  IndexRight  MeanScoreLeft  MeanScoreRight  MeanScore  ClipsLeft    ClipsRight           ScoresLeft    ScoresRight     Passing
+    4391559  2          2           73             100             87         0,14,15,14   1558,2097,2183,2113  -1,56,82,82   100,100,100,-1  1
+    4457329  2          2           65             85              75         0,15,18      2772,2174,2402       -1,54,76      87,82,-1        1
+    4522785  3          3           86             87              87         0,15,15,14   2016,2176,2198,2119  -1,100,76,82  73,100,89,-1    1
 
 ### Summary
 Third file is `prefix.demux.summary`, shows how many ZMWs have been filtered,
@@ -125,8 +125,6 @@ barcode scores.
 
 ## Missing Features
  * bam2bam-like BAM barcode header line
- * verification
- * validation
 
 ## FAQ
 ### How fast is fast?
