@@ -75,7 +75,8 @@ const int rightAdapterFlag = static_cast<int>(BAM::LocalContextFlags::ADAPTER_AF
 }
 
 BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
-                                 const std::vector<Barcode>& queries, const LimaSettings& settings)
+                                 const std::vector<Barcode>& queries, const LimaSettings& settings,
+                                 const AlignParameters& alignParameters)
 {
     int barcodeLength = 0;
     for (const auto& q : queries)
@@ -124,11 +125,13 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
         if (hasAdapterLeft && targetSizeLeft > 0) {
             matrix.resize((targetSizeLeft + 1) * (barcodeLength + 1));
             for (size_t i = 0; i < queries.size(); ++i) {
-                auto pair = AlignUtils::Align(queries[i].Bases, target, targetSizeLeft, matrix);
+                auto pair = AlignUtils::Align(queries[i].Bases, target, targetSizeLeft, matrix,
+                                              alignParameters);
                 const auto score = NormalizeScore(pair.first);
                 const auto refEnd = pair.second;
 
-                pair = AlignUtils::Align(queries[i].BasesRC, target, targetSizeLeft, matrix);
+                pair = AlignUtils::Align(queries[i].BasesRC, target, targetSizeLeft, matrix,
+                                         alignParameters);
                 const auto scoreRC = NormalizeScore(pair.first);
                 const auto refEndRC = pair.second;
 
@@ -160,12 +163,12 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
             matrix.resize((targetSizeRight + 1) * (barcodeLength + 1));
             for (size_t i = 0; i < queries.size(); ++i) {
                 auto pair = AlignUtils::Align(queries[i].Bases, target + alignerRightBegin,
-                                              targetSizeRight, matrix);
+                                              targetSizeRight, matrix, alignParameters);
                 const auto score = NormalizeScore(pair.first);
                 const auto refEnd = pair.second;
 
                 pair = AlignUtils::Align(queries[i].BasesRC, target + alignerRightBegin,
-                                         targetSizeRight, matrix);
+                                         targetSizeRight, matrix, alignParameters);
                 const auto scoreRC = NormalizeScore(pair.first);
                 const auto refEndRC = pair.second;
 
@@ -305,6 +308,9 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                            const std::vector<std::string>& datasetPaths,
                            const std::vector<Barcode>& barcodes)
 {
+    AlignParameters alignParameters(settings.MatchScore, -settings.MismatchPenalty,
+                                    -settings.GapOpenPenalty, -settings.GapOpenPenalty,
+                                    -settings.MatchScore);
 
     // Single writer for non-split mode
     std::unique_ptr<BAM::BamWriter> writer;
@@ -324,12 +330,12 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                        std::ref(settings), std::ref(prefix), std::ref(summary), std::ref(header));
         // Get a query to the underlying BAM files, respecting filters
         auto query = AdvancedFileUtils::BamQuery(datasetPath);
-        auto Submit = [&barcodes, &settings, &summary,
-                       &threadCount](std::vector<std::vector<BAM::BamRecord>> chunk) {
+        auto Submit = [&barcodes, &settings, &summary, &threadCount,
+                       &alignParameters](std::vector<std::vector<BAM::BamRecord>> chunk) {
             ++threadCount;
             std::vector<TaskResult> results;
             for (const auto& records : chunk) {
-                TaskResult result{LimaWorkflow::Tag(records, barcodes, settings)};
+                TaskResult result{LimaWorkflow::Tag(records, barcodes, settings, alignParameters)};
                 const auto& bhp = result.BHP;
 
                 bool aboveMinScore = bhp.MeanScore >= settings.MinScore;
