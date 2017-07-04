@@ -71,31 +71,31 @@ An individual score with `-1` indicates that a leading or trailing adapter is
 missing. This is irrelevant for CCS reads.
 
     $ head prefix.demux.report | column -t
-    ZMW      IndexLeft  IndexRight  MeanScoreLeft  MeanScoreRight  MeanScore  ClipsLeft    ClipsRight           ScoresLeft    ScoresRight     Passing
-    4391559  2          2           73             100             87         0,14,15,14   1558,2097,2183,2113  -1,56,82,82   100,100,100,-1  1
-    4457329  2          2           65             85              75         0,15,18      2772,2174,2402       -1,54,76      87,82,-1        1
-    4522785  3          3           86             87              87         0,15,15,14   2016,2176,2198,2119  -1,100,76,82  73,100,89,-1    1
+    ZMW      IndexLeft  IndexRight  MeanScoreLeft  MeanScoreRight  MeanScore  ClipsLeft    ClipsRight           ScoresLeft    ScoresRight     NumPasses PassedFilters
+    4391559  2          2           73             100             87         0,14,15,14   1558,2097,2183,2113  -1,56,82,82   100,100,100,-1  2         1
+    4457329  2          2           65             85              75         0,15,18      2772,2174,2402       -1,54,76      87,82,-1        1         1
+    4522785  3          3           86             87              87         0,15,15,14   2016,2176,2198,2119  -1,100,76,82  73,100,89,-1    2         1
 
 ### Summary
 Third file is `prefix.demux.summary`, shows how many ZMWs have been filtered,
 how ZMWs many are *symmetric*/*asymmetric*, and how many reads have been filtered.
 
-    ZMWs input                    : 1390
-    ZMWs above all thresholds (A) : 925
-    ZMWs below any threshold  (B) : 465
+    ZMWs input                    : 332254
+    ZMWs above all thresholds (A) : 246998
+    ZMWs below any threshold  (B) : 85256
 
     Marginals for (B)
-    ZMWs below length threshold   : 303
-    ZMWs below score threshold    : 0
-    ZMWs below passes threshold   : 465
+    ZMWs below length threshold   : 43729
+    ZMWs below score threshold    : 41904
+    ZMWs below passes threshold   : 85005
 
     For (A)
-    ZMWs symmetric                : 923
-    ZMWs asymmetric               : 2
+    ZMWs symmetric                : 229735
+    ZMWs asymmetric               : 17263
 
     For (A)
-    Reads above length            : 9367
-    Reads below length            : 8
+    Reads above length            : 2348276
+    Reads below length            : 3719
 
 ### Counts
 Fourth file is `prefix.demux.counts`, a tsv file, shows the counts for each
@@ -117,8 +117,11 @@ barcode scores.
 ## Defaults
  - Reads with length below 50 bp after demultiplexing are omitted.
    Adjusted with `--min-length`.
- - ZMWs with barcode score below 50 are omitted.
-   Adjust with `--min-score`
+ - ZMWs with barcode score below 45 are omitted.
+   Adjust with `--min-score`.
+ - ZMWs with less than 1 full pass are omitted, meaning a read with a
+   left and right adapter.
+   Adjust with `--min-passes`.
  - For each barcode, we align it to a subsequence of the begin and end of
    the CCS read. The length of the subsequence is `barcode_length * multiplier`,
    which can be adjusted with `--window-size-mult`.
