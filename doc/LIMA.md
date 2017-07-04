@@ -26,7 +26,7 @@
 
 ## Scope
 *Lima* offers following features:
- * Demultiplex PacBio reads with insane speed, vectorized alignment and parallelized processing
+ * Demultiplex PacBio reads with insane speed
  * Both, raw subreads and ccs reads can be processed
  * In- and output are BAM
  * Barcode sequences get clipped and `bq` and `bc` tags added, just like bam2bam
@@ -58,7 +58,7 @@ If only identical barcode pairs are of interest, *symmetric*, please use
 `--symmetric`.
 
 ## Output
-Both *lima* tools generate four output files, all starting with the BAM input
+*Lima* generates four output files, all starting with the BAM input
 file name prefix.
 
 ### BAM
