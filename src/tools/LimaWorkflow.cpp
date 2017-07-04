@@ -135,7 +135,8 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                 const auto scoreRC = NormalizeScore(pair.first);
                 const auto refEndRC = pair.second;
 
-                if ((maxScoring && isFull && counterFullLeft < maxScoredReads) || !maxScoring) {
+                if ((!maxScoring || (maxScoring && isFull && counterFullLeft < maxScoredReads)) &&
+                    (!settings.PerSubread || (settings.PerSubread && isFull))) {
                     if (score > scoreRC)
                         left[i].AddWithSumScore(score, refEnd);
                     else
@@ -147,7 +148,7 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                         left[i].Add(scoreRC, refEndRC);
                 }
             }
-            if ((maxScoring && isFull && counterFullLeft < maxScoredReads) || !maxScoring)
+            if (!maxScoring || (maxScoring && isFull && counterFullLeft < maxScoredReads))
                 ++counterFullLeft;
             ++counterLeft;
         } else {
@@ -171,8 +172,8 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                                          targetSizeRight, matrix, alignParameters);
                 const auto scoreRC = NormalizeScore(pair.first);
                 const auto refEndRC = pair.second;
-
-                if ((maxScoring && isFull && counterFullRight < maxScoredReads) || !maxScoring) {
+                if ((!maxScoring || (maxScoring && isFull && counterFullRight < maxScoredReads)) &&
+                    (!settings.PerSubread || (settings.PerSubread && isFull))) {
                     if (score > scoreRC)
                         right[i].AddWithSumScore(score, alignerRightBegin + refEnd);
                     else
@@ -184,7 +185,7 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                         right[i].Add(scoreRC, alignerRightBegin + refEndRC);
                 }
             }
-            if ((maxScoring && isFull && counterFullRight < maxScoredReads) || !maxScoring)
+            if (!maxScoring || (maxScoring && isFull && counterFullRight < maxScoredReads))
                 ++counterFullRight;
             ++counterRight;
         } else {
@@ -240,7 +241,7 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
     if (!settings.NoReports) {
         report.open(prefix + ".demux.report");
         report << "ZMW\tIndexLeft\tIndexRight\tMeanScoreLeft\tMeanScoreRight\tMeanScore\tClipsL"
-                  "eft\tClipsRight\tScoresLeft\tScoresRight"
+                  "eft\tClipsRight\tScoresLeft\tScoresRight\tPassing"
                << std::endl;
     }
 
@@ -256,7 +257,10 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
                 else
                     ++summary.AsymmetricCounts;
 
-                if ((settings.KeepSymmetric && leftIdx == rightIdx) || !settings.KeepSymmetric) {
+                if (((settings.KeepSymmetric && p.BHP.Left.Idx == p.BHP.Right.Idx) ||
+                     !settings.KeepSymmetric) &&
+                    (!settings.PerSubread ||
+                     (settings.PerSubread && p.BHP.Left.Score > 0 && p.BHP.Right.Score > 0))) {
                     if (settings.SplitBam)
                         for (auto&& r : p.Records)
                             barcodeToRecords[std::make_pair(leftIdx, rightIdx)].emplace_back(
@@ -268,7 +272,14 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
                     if (!settings.NoReports) ++barcodePairCounts[leftIdx][rightIdx];
                 }
             }
-            if (!settings.NoReports) report << p.Report << std::endl;
+            if (!settings.NoReports)
+                report << p.Report << "\t"
+                       << (p.PassingFilters &&
+                           ((settings.KeepSymmetric && p.BHP.Left.Idx == p.BHP.Right.Idx) ||
+                            !settings.KeepSymmetric) &&
+                           (!settings.PerSubread ||
+                            (settings.PerSubread && p.BHP.Left.Score > 0 && p.BHP.Right.Score > 0)))
+                       << std::endl;
         }
     };
 
