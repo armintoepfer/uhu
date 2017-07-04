@@ -245,7 +245,7 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
     if (!settings.NoReports) {
         report.open(prefix + ".demux.report");
         report << "ZMW\tIndexLeft\tIndexRight\tMeanScoreLeft\tMeanScoreRight\tMeanScore\tClipsL"
-                  "eft\tClipsRight\tScoresLeft\tScoresRight\tNumPasses\tPassing"
+                  "eft\tClipsRight\tScoresLeft\tScoresRight\tNumPasses\tPassedFilters"
                << std::endl;
     }
 
