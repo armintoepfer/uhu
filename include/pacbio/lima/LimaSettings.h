@@ -54,8 +54,9 @@ struct LimaSettings
     const int MinLength;
     uint8_t MatchScore;
     uint8_t MismatchPenalty;
-    uint8_t GapOpenPenalty;
-    uint8_t GapExtPenalty;
+    uint8_t DeletionPenalty;
+    uint8_t InsertionPenalty;
+    uint8_t BranchPenalty;
     const bool NoBam;
     const bool NoReports;
     const bool SplitBam;

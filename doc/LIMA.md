@@ -117,10 +117,11 @@ barcode scores.
    the CCS read. The length of the subsequence is `barcode_length * multiplier`,
    which can be adjusted with `--window-size-mult`.
  - Alignment options
-    -A,--match-score       Score for a sequence match.
-    -B,--mismatch-penalty  Penalty for a mismatch.
-    -O,--gap-open-penalty  Gap open penalties for deletions and insertions.
-    -e,--gap-ext-penalty   Gap extension penalties for deletions and insertions.
+    -A,--match-score        Score for a sequence match.
+    -B,--mismatch-penalty   Penalty for a mismatch.
+    -D,--deletion-penalty   Deletions penalty.
+    -I,--insertion-penalty  Insertion penalty.
+    -X,--branch-penalty     Branch penalty.
 
 ## Missing Features
  * bam2bam-like BAM barcode header line

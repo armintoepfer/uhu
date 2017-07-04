@@ -108,20 +108,28 @@ const PlainOption MismatchPenalty{
     CLI::Option::IntType(13)
 };
 
-const PlainOption GapOpenPenalty{
-    "gapOpenPenalty",
-    {"O", "gap-open-penalty"},
-    "GapOpenPenalty",
-    "Gap open penalties for deletions and insertions.",
+const PlainOption DeletionPenalty{
+    "deletionPenalty",
+    {"D", "deletion-penalty"},
+    "DeletionPenalty",
+    "Deletions penalty.",
     CLI::Option::IntType(7)
 };
 
-const PlainOption GapExtPenalty{
-    "gapExtPenalty",
-    {"E", "gap-ext-penalty"},
-    "GapExtPenalty",
-    "Gap extension penalties for deletions and insertions.",
+const PlainOption InsertionPenalty{
+    "insertionPenalty",
+    {"I", "insertion-penalty"},
+    "InsertionPenalty",
+    "Insertion penalty.",
     CLI::Option::IntType(7)
+};
+
+const PlainOption BranchPenalty{
+    "branchPenalty",
+    {"X", "branch-penalty"},
+    "BranchPenalty",
+    "Branch penalty.",
+    CLI::Option::IntType(4)
 };
 
 const PlainOption NoBam{
@@ -152,7 +160,7 @@ const PlainOption CCS{
     "CCS",
     {"ccs"},
     "CCS",
-    "CCS mode, use optimal alignment options -A 4 -B 1 -O 3 -E 1.",
+    "CCS mode, use optimal alignment options -A 4 -B 1 -D 3 -I 3 -X 4.",
     CLI::Option::BoolType()
 };
 const PlainOption NumThreads{
@@ -181,8 +189,9 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     , MinLength(options[OptionNames::MinLength])
     , MatchScore(options[OptionNames::MatchScore])
     , MismatchPenalty(options[OptionNames::MismatchPenalty])
-    , GapOpenPenalty(options[OptionNames::GapOpenPenalty])
-    , GapExtPenalty(options[OptionNames::GapExtPenalty])
+    , DeletionPenalty(options[OptionNames::DeletionPenalty])
+    , InsertionPenalty(options[OptionNames::InsertionPenalty])
+    , BranchPenalty(options[OptionNames::BranchPenalty])
     , NoBam(options[OptionNames::NoBam])
     , NoReports(options[OptionNames::NoReports])
     , SplitBam(options[OptionNames::SplitBam])
@@ -195,8 +204,9 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     if (options[OptionNames::CCS]) {
         MatchScore = 4;
         MismatchPenalty = 1;
-        GapOpenPenalty = 3;
-        GapExtPenalty = 1;
+        DeletionPenalty = 3;
+        InsertionPenalty = 3;
+        BranchPenalty = 2;
     }
 
     if (static_cast<int>(options[OptionNames::MatchScore]) !=
@@ -205,12 +215,15 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     if (static_cast<int>(options[OptionNames::MismatchPenalty]) !=
         static_cast<int>(OptionNames::MismatchPenalty.defaultValue))
         MismatchPenalty = options[OptionNames::MismatchPenalty];
-    if (static_cast<int>(options[OptionNames::GapOpenPenalty]) !=
-        static_cast<int>(OptionNames::GapOpenPenalty.defaultValue))
-        GapOpenPenalty = options[OptionNames::GapOpenPenalty];
-    if (static_cast<int>(options[OptionNames::GapExtPenalty]) !=
-        static_cast<int>(OptionNames::GapExtPenalty.defaultValue))
-        GapExtPenalty = options[OptionNames::GapExtPenalty];
+    if (static_cast<int>(options[OptionNames::DeletionPenalty]) !=
+        static_cast<int>(OptionNames::DeletionPenalty.defaultValue))
+        DeletionPenalty = options[OptionNames::DeletionPenalty];
+    if (static_cast<int>(options[OptionNames::InsertionPenalty]) !=
+        static_cast<int>(OptionNames::InsertionPenalty.defaultValue))
+        InsertionPenalty = options[OptionNames::InsertionPenalty];
+    if (static_cast<int>(options[OptionNames::BranchPenalty]) !=
+        static_cast<int>(OptionNames::BranchPenalty.defaultValue))
+        BranchPenalty = options[OptionNames::BranchPenalty];
 
     int requestedNThreads;
     if (options.IsFromRTC()) {
@@ -262,8 +275,9 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
         OptionNames::CCS,
         OptionNames::MatchScore,
         OptionNames::MismatchPenalty,
-        OptionNames::GapOpenPenalty,
-        OptionNames::GapExtPenalty
+        OptionNames::DeletionPenalty,
+        OptionNames::InsertionPenalty,
+        OptionNames::BranchPenalty
     });
 
     i.AddGroup("Output Restrictions",
