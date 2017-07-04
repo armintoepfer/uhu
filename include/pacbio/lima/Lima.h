@@ -135,6 +135,8 @@ struct BarcodeHitPair
 
 struct Summary
 {
+    std::atomic_int NumZMWs{0};
+    std::atomic_int BelowNumPasses{0};
     std::atomic_int BelowMinLength{0};
     std::atomic_int BelowMinScore{0};
     std::atomic_int BelowBoth{0};

@@ -80,16 +80,22 @@ missing. This is irrelevant for CCS reads.
 Third file is `prefix.demux.summary`, shows how many ZMWs have been filtered,
 how ZMWs many are *symmetric*/*asymmetric*, and how many reads have been filtered.
 
-    ZMWs above length and score threshold : 1127
-    ZMWs below length and score threshold : 0
-    ZMWs below length threshold           : 0
-    ZMWs below score threshold            : 2025
+    ZMWs input                    : 1390
+    ZMWs above all thresholds (A) : 925
+    ZMWs below any threshold  (B) : 465
 
-    ZMWs symmetric                        : 1013
-    ZMWs asymmetric                       : 114
+    Marginals for (B)
+    ZMWs below length threshold   : 303
+    ZMWs below score threshold    : 0
+    ZMWs below passes threshold   : 465
 
-    Reads above length                    : 7596
-    Reads below length                    : 9
+    For (A)
+    ZMWs symmetric                : 923
+    ZMWs asymmetric               : 2
+
+    For (A)
+    Reads above length            : 9367
+    Reads below length            : 8
 
 ### Counts
 Fourth file is `prefix.demux.counts`, a tsv file, shows the counts for each
