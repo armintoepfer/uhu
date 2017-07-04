@@ -184,6 +184,13 @@ const PlainOption PerSubread{
     "Do not tag per ZMW, but per subread.",
     CLI::Option::BoolType()
 };
+const PlainOption MinPasses{
+    "minPasses",
+    { "u", "min-passes" },
+    "Minimal Number Passes",
+    "Minimal number of full passes.",
+    CLI::Option::IntType(1)
+};
 // clang-format on
 }  // namespace OptionNames
 
@@ -205,6 +212,7 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     , MaxScoredReads(options[OptionNames::MaxScoredReads])
     , Chunks(options[OptionNames::Chunks])
     , PerSubread(options[OptionNames::PerSubread])
+    , MinPasses(options[OptionNames::MinPasses])
 {
     if (SplitBam && NoBam)
         throw std::runtime_error("Options --split-bam and --no-bam are mutually exclusive!");
@@ -275,6 +283,7 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
         OptionNames::MinLength,
         OptionNames::MinScore,
         OptionNames::MaxScoredReads,
+        OptionNames::MinPasses,
         OptionNames::Chunks,
         OptionNames::PerSubread
     });

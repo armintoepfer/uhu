@@ -120,7 +120,6 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
         const auto seq = r.Sequence();
         const auto target = seq.c_str();
         const int targetLength = seq.size();
-
         const auto targetSizeLeft = std::min(targetLength, barcodeLengthWSpacing);
         if (hasAdapterLeft && targetSizeLeft > 0) {
             matrix.resize((targetSizeLeft + 1) * (barcodeLength + 1));
@@ -211,13 +210,17 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
 
     if (counterLeft > 0)
         leftBH = Compute(left, maxScoring ? counterFullLeft : counterLeft);
-    else
+    else {
         leftBH.Clips.resize(numRecords);
+        leftBH.Scores.resize(numRecords, -1);
+    }
 
     if (counterRight > 0)
         rightBH = Compute(right, maxScoring ? counterFullRight : counterRight);
-    else
+    else {
         rightBH.Clips.resize(numRecords);
+        rightBH.Scores.resize(numRecords, -1);
+    }
 
     return BarcodeHitPair(std::move(leftBH), std::move(rightBH));
 }
@@ -229,6 +232,7 @@ struct TaskResult
     std::string Report;
     BarcodeHitPair BHP;
     bool PassingFilters;
+    int NumPasses;
 };
 
 void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
@@ -241,7 +245,7 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
     if (!settings.NoReports) {
         report.open(prefix + ".demux.report");
         report << "ZMW\tIndexLeft\tIndexRight\tMeanScoreLeft\tMeanScoreRight\tMeanScore\tClipsL"
-                  "eft\tClipsRight\tScoresLeft\tScoresRight\tPassing"
+                  "eft\tClipsRight\tScoresLeft\tScoresRight\tNumPasses\tPassing"
                << std::endl;
     }
 
@@ -273,7 +277,7 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
                 }
             }
             if (!settings.NoReports)
-                report << p.Report << "\t"
+                report << p.Report << "\t" << p.NumPasses << "\t"
                        << (p.PassingFilters &&
                            ((settings.KeepSymmetric && p.BHP.Left.Idx == p.BHP.Right.Idx) ||
                             !settings.KeepSymmetric) &&
@@ -353,18 +357,27 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                 bool aboveMinLength = false;
 
                 if (bhp.Right.Clips.size() != bhp.Left.Clips.size() ||
-                    bhp.Right.Clips.size() != records.size())
-                    throw std::runtime_error("Internal error, clips sizes not equal! " +
-                                             records.at(0).FullName() + " " +
-                                             std::to_string(bhp.Left.Clips.size()) + " " +
-                                             std::to_string(bhp.Right.Clips.size()));
+                    bhp.Right.Clips.size() != records.size()) {
+                    std::cerr << "Internal error, clips sizes not equal!" << std::endl;
+                    exit(1);
+                }
                 for (size_t i = 0; i < bhp.Right.Clips.size(); ++i) {
                     if (bhp.Right.Clips.at(i) - bhp.Left.Clips.at(i) > settings.MinLength) {
                         aboveMinLength = true;
                         break;
                     }
                 }
-                result.PassingFilters = aboveMinScore && aboveMinLength;
+                int numPasses = 0;
+                if (bhp.Right.Scores.size() != bhp.Left.Scores.size()) {
+                    std::cerr << "Internal error, scores sizes not equal!" << std::endl;
+                    exit(1);
+                }
+                for (size_t i = 0; i < bhp.Right.Scores.size(); ++i) {
+                    numPasses += bhp.Right.Scores.at(i) != -1 && bhp.Left.Scores.at(i) != -1;
+                }
+                result.PassingFilters =
+                    aboveMinScore && aboveMinLength && numPasses >= settings.MinPasses;
+                result.NumPasses = numPasses;
 
                 if (!settings.NoReports)
                     result.Report =
@@ -432,6 +445,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
             }
             records.push_back(r);
         }
+        if (!records.empty()) chunk.emplace_back(std::move(records));
         if (!chunk.empty()) workQueue.ProduceWith(Submit, chunk);
         workQueue.Finalize();
         while (threadCount > 0)
