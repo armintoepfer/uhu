@@ -351,6 +351,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
             std::vector<TaskResult> results;
             for (const auto& records : chunk) {
                 TaskResult result{LimaWorkflow::Tag(records, barcodes, settings, alignParameters)};
+                ++summary.NumZMWs;
                 const auto& bhp = result.BHP;
 
                 bool aboveMinScore = bhp.MeanScore >= settings.MinScore;
@@ -375,15 +376,15 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                 for (size_t i = 0; i < bhp.Right.Scores.size(); ++i) {
                     numPasses += bhp.Right.Scores.at(i) != -1 && bhp.Left.Scores.at(i) != -1;
                 }
-                result.PassingFilters =
-                    aboveMinScore && aboveMinLength && numPasses >= settings.MinPasses;
+                bool aboveNumPasses = numPasses >= settings.MinPasses;
+                result.PassingFilters = aboveMinScore && aboveMinLength && aboveNumPasses;
                 result.NumPasses = numPasses;
 
                 if (!settings.NoReports)
                     result.Report =
                         std::to_string(records.at(0).HoleNumber()) + "\t" + std::string(bhp);
 
-                if (aboveMinScore && aboveMinLength) {
+                if (aboveMinScore && aboveMinLength && aboveNumPasses) {
                     if (!settings.NoBam) {
                         for (size_t i = 0; i < records.size(); ++i) {
                             int clipLeft = bhp.Left.Clips.at(i);
@@ -405,12 +406,10 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                         }
                     }
                     ++summary.AboveThresholds;
-                } else if (!aboveMinLength && !aboveMinScore) {
-                    ++summary.BelowBoth;
-                } else if (!aboveMinLength) {
-                    ++summary.BelowMinLength;
-                } else if (!aboveMinScore) {
-                    ++summary.BelowMinScore;
+                } else {
+                    if (!aboveMinLength) ++summary.BelowMinLength;
+                    if (!aboveMinScore) ++summary.BelowMinScore;
+                    if (!aboveNumPasses) ++summary.BelowNumPasses;
                 }
                 results.emplace_back(std::move(result));
             }
