@@ -153,6 +153,25 @@ struct AdvancedFileUtils
     static std::unique_ptr<BAM::internal::IQuery> BamQuery(const std::string& filePath);
 };
 
+struct AlignParameters
+{
+    AlignParameters(int32_t matchScore, int32_t mismatchPenalty, int32_t deletionPenalty,
+                    int32_t insertionPenalty, int32_t branchPenalty)
+        : MatchScore(matchScore)
+        , MismatchPenalty(mismatchPenalty)
+        , DeletionPenalty(deletionPenalty)
+        , InsertionPenalty(insertionPenalty)
+        , BranchPenalty(branchPenalty)
+    {
+    }
+
+    int32_t MatchScore;
+    int32_t MismatchPenalty;
+    int32_t DeletionPenalty;
+    int32_t InsertionPenalty;
+    int32_t BranchPenalty;
+};
+
 struct AlignUtils
 {
     /// Fills out a supplied SW matrix.
@@ -164,11 +183,8 @@ struct AlignUtils
     /// \param  matrix      int32_t* to the SW matrix
     static void SWComputeMatrix(const char* const query, const int32_t M, const char* const read,
                                 const int32_t N, const bool globalInQuery,
-                                std::vector<int32_t>& matrix, const int32_t matchScore = 4,
-                                const int32_t mismatchPenalty = -13,
-                                const int32_t deletionPenalty = -7,
-                                const int32_t insertionPenalty = -7,
-                                const int32_t branchPenalty = -4) noexcept;
+                                std::vector<int32_t>& matrix,
+                                const AlignParameters& parameters) noexcept;
 
     /// Traverse the last row of an SW matrix (i.e. representing
     ///     alignments terminating with the last base of the query
@@ -184,8 +200,8 @@ struct AlignUtils
                                                     const int32_t readLength) noexcept;
 
     static std::pair<int32_t, int32_t> Align(const std::string& bcBases, const char* target,
-                                             const int targetSize,
-                                             std::vector<int32_t>& matrix) noexcept;
+                                             const int targetSize, std::vector<int32_t>& matrix,
+                                             const AlignParameters& parameters) noexcept;
 };
 }
 }

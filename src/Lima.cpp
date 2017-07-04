@@ -179,10 +179,11 @@ std::unique_ptr<BAM::internal::IQuery> AdvancedFileUtils::BamQuery(const std::st
 
 // ## AlignUtils ##
 std::pair<int32_t, int32_t> AlignUtils::Align(const std::string& bcBases, const char* target,
-                                              const int targetSize,
-                                              std::vector<int32_t>& matrix) noexcept
+                                              const int targetSize, std::vector<int32_t>& matrix,
+                                              const AlignParameters& parameters) noexcept
 {
-    SWComputeMatrix(bcBases.c_str(), bcBases.size() + 1, target, targetSize + 1, false, matrix);
+    SWComputeMatrix(bcBases.c_str(), bcBases.size() + 1, target, targetSize + 1, false, matrix,
+                    parameters);
     return SWLastRowMax(matrix, bcBases.size(), targetSize);
 }
 
@@ -211,16 +212,14 @@ std::pair<int32_t, int32_t> AlignUtils::SWLastRowMax(const std::vector<int32_t>&
 
 void AlignUtils::SWComputeMatrix(const char* const query, const int32_t M, const char* const read,
                                  const int32_t N, const bool globalInQuery,
-                                 std::vector<int32_t>& matrix, const int32_t matchScore,
-                                 const int32_t mismatchPenalty, const int32_t deletionPenalty,
-                                 const int32_t insertionPenalty,
-                                 const int32_t branchPenalty) noexcept
+                                 std::vector<int32_t>& matrix,
+                                 const AlignParameters& parameters) noexcept
 {
     matrix[0] = 0;
 
     if (globalInQuery)
         for (int32_t i = 1; i < M; ++i)
-            matrix[i * N] = i * deletionPenalty;
+            matrix[i * N] = i * parameters.DeletionPenalty;
     else
         for (int32_t i = 1; i < M; ++i)
             matrix[i * N] = 0;
@@ -230,25 +229,25 @@ void AlignUtils::SWComputeMatrix(const char* const query, const int32_t M, const
 
     char iQuery;
     char iBeforeQuery;
-    int32_t mismatchDelta = matchScore - mismatchPenalty;
-    int32_t insertionDelta = branchPenalty - insertionPenalty;
+    int32_t mismatchDelta = parameters.MatchScore - parameters.MismatchPenalty;
+    int32_t insertionDelta = parameters.BranchPenalty - parameters.InsertionPenalty;
     for (int32_t i = 1; __builtin_expect(i < M, 1); ++i) {
         iQuery = query[i];
         iBeforeQuery = query[i - 1];
         if (__builtin_expect(i < M - 1, 1)) {
             for (int32_t j = 1; __builtin_expect(j < N, 1); ++j) {
-                int32_t a = matrix[(i - 1) * N + j - 1] + matchScore;
-                int32_t b = matrix[i * N + j - 1] + branchPenalty;
-                const int32_t c = matrix[(i - 1) * N + j] + deletionPenalty;
+                int32_t a = matrix[(i - 1) * N + j - 1] + parameters.MatchScore;
+                int32_t b = matrix[i * N + j - 1] + parameters.BranchPenalty;
+                const int32_t c = matrix[(i - 1) * N + j] + parameters.DeletionPenalty;
                 if (read[j - 1] != iBeforeQuery) a -= mismatchDelta;
                 if (read[j - 1] != iQuery) b -= insertionDelta;
                 matrix[i * N + j] = std::max(a, std::max(b, c));
             }
         } else {
             for (int32_t j = 1; __builtin_expect(j < N, 1); ++j) {
-                int32_t a = matrix[(i - 1) * N + j - 1] + matchScore;
-                int32_t b = matrix[i * N + j - 1] + insertionPenalty;
-                const int32_t c = matrix[(i - 1) * N + j] + deletionPenalty;
+                int32_t a = matrix[(i - 1) * N + j - 1] + parameters.MatchScore;
+                int32_t b = matrix[i * N + j - 1] + parameters.InsertionPenalty;
+                const int32_t c = matrix[(i - 1) * N + j] + parameters.DeletionPenalty;
                 if (read[j - 1] != iBeforeQuery) a -= mismatchDelta;
                 matrix[i * N + j] = std::max(a, std::max(b, c));
             }

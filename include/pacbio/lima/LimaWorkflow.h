@@ -47,7 +47,8 @@ namespace Lima {
 struct LimaWorkflow
 {
     static BarcodeHitPair Tag(const std::vector<BAM::BamRecord> records,
-                              const std::vector<Barcode>& queries, const LimaSettings& settings);
+                              const std::vector<Barcode>& queries, const LimaSettings& settings,
+                              const AlignParameters& alignParameters);
 
     static void Process(const LimaSettings& settings, const std::vector<std::string>& datasetPaths,
                         const std::vector<Barcode>& barcodes);
