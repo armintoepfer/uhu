@@ -214,7 +214,7 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
         MismatchPenalty = 1;
         DeletionPenalty = 3;
         InsertionPenalty = 3;
-        BranchPenalty = 2;
+        BranchPenalty = 3;
     }
 
     if (static_cast<int>(options[OptionNames::MatchScore]) !=
