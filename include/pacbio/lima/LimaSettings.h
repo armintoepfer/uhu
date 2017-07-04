@@ -64,6 +64,7 @@ struct LimaSettings
     const int MaxScoredReads;
     const int Chunks;
     const bool PerSubread;
+    const int MinPasses;
 
     /// Parses the provided CLI::Results and retrieves a defined set of options.
     LimaSettings(const PacBio::CLI::Results& options);
