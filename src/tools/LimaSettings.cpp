@@ -45,18 +45,10 @@ namespace OptionNames {
 using PlainOption = Data::PlainOption;
 // clang-format off
 const PlainOption KeepSymmetric{
-    "KeepSymmetric",
-    {"s","symmetric"},
-    "KeepSymmetric",
-    "Only keep symmetric barcodes in BAM output.",
-    CLI::Option::BoolType()
-};
-
-const PlainOption TryRC{
-    "tryRC",
-    {"t","try-rc"},
-    "TryRC",
-    "Try barcodes also as reverse complements.",
+    "KeepSame",
+    {"s","same"},
+    "KeepSame",
+    "Only keep same barcodes in a pair in BAM output.",
     CLI::Option::BoolType()
 };
 
@@ -65,7 +57,7 @@ const PlainOption WindowSizeMult{
     {"w","window-size-mult"},
     "WindowSizeMult",
     "The candidate region size multiplier: barcode_length * multiplier.",
-    CLI::Option::FloatType(1.2)
+    CLI::Option::FloatType(1.5)
 };
 
 const PlainOption MaxScoredReads{
@@ -177,11 +169,11 @@ const PlainOption Chunks{
     "Size of Chunks.",
     CLI::Option::IntType(10)
 };
-const PlainOption PerSubread{
-    "PerSubread",
-    { "p", "per-subread" },
-    "Tag per subread",
-    "Do not tag per ZMW, but per subread.",
+const PlainOption PerRead{
+    "PerRead",
+    { "p", "per-read" },
+    "Tag per read",
+    "Do not tag per ZMW, but per read.",
     CLI::Option::BoolType()
 };
 const PlainOption MinPasses{
@@ -211,7 +203,7 @@ LimaSettings::LimaSettings(const PacBio::CLI::Results& options)
     , SplitBam(options[OptionNames::SplitBam])
     , MaxScoredReads(options[OptionNames::MaxScoredReads])
     , Chunks(options[OptionNames::Chunks])
-    , PerSubread(options[OptionNames::PerSubread])
+    , PerRead(options[OptionNames::PerRead])
     , MinPasses(options[OptionNames::MinPasses])
 {
     if (SplitBam && NoBam)
@@ -285,7 +277,7 @@ PacBio::CLI::Interface LimaSettings::CreateCLI()
         OptionNames::MaxScoredReads,
         OptionNames::MinPasses,
         OptionNames::Chunks,
-        OptionNames::PerSubread
+        OptionNames::PerRead
     });
 
     i.AddGroup("Aligner Configuration",

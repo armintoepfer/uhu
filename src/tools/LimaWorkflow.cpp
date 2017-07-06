@@ -135,7 +135,7 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                 const auto refEndRC = pair.second;
 
                 if ((!maxScoring || (maxScoring && isFull && counterFullLeft < maxScoredReads)) &&
-                    (!settings.PerSubread || (settings.PerSubread && isFull))) {
+                    (!settings.PerRead || (settings.PerRead && isFull))) {
                     if (score > scoreRC)
                         left[i].AddWithSumScore(score, refEnd);
                     else
@@ -172,7 +172,7 @@ BarcodeHitPair LimaWorkflow::Tag(const std::vector<BAM::BamRecord> records,
                 const auto scoreRC = NormalizeScore(pair.first);
                 const auto refEndRC = pair.second;
                 if ((!maxScoring || (maxScoring && isFull && counterFullRight < maxScoredReads)) &&
-                    (!settings.PerSubread || (settings.PerSubread && isFull))) {
+                    (!settings.PerRead || (settings.PerRead && isFull))) {
                     if (score > scoreRC)
                         right[i].AddWithSumScore(score, alignerRightBegin + refEnd);
                     else
@@ -244,8 +244,9 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
     std::ofstream report;
     if (!settings.NoReports) {
         report.open(prefix + ".demux.report");
-        report << "ZMW\tIndexLeft\tIndexRight\tMeanScoreLeft\tMeanScoreRight\tMeanScore\tClipsL"
-                  "eft\tClipsRight\tScoresLeft\tScoresRight\tNumPasses\tPassedFilters"
+        report << "ZMW\tIdxLeading\tIdxTrailing\tMeanScoreLeading\tMeanScoreTrailing\tMeanScore"
+                  "\tClipsLeading\tClipsTrailing\tScoresLeading\tScoresTrailing\tNumPasses\tPassedF"
+                  "ilters"
                << std::endl;
     }
 
@@ -263,8 +264,8 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
 
                 if (((settings.KeepSymmetric && p.BHP.Left.Idx == p.BHP.Right.Idx) ||
                      !settings.KeepSymmetric) &&
-                    (!settings.PerSubread ||
-                     (settings.PerSubread && p.BHP.Left.Score > 0 && p.BHP.Right.Score > 0))) {
+                    (!settings.PerRead ||
+                     (settings.PerRead && p.BHP.Left.Score > 0 && p.BHP.Right.Score > 0))) {
                     if (settings.SplitBam)
                         for (auto&& r : p.Records)
                             barcodeToRecords[std::make_pair(leftIdx, rightIdx)].emplace_back(
@@ -281,8 +282,8 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
                        << (p.PassingFilters &&
                            ((settings.KeepSymmetric && p.BHP.Left.Idx == p.BHP.Right.Idx) ||
                             !settings.KeepSymmetric) &&
-                           (!settings.PerSubread ||
-                            (settings.PerSubread && p.BHP.Left.Score > 0 && p.BHP.Right.Score > 0)))
+                           (!settings.PerRead ||
+                            (settings.PerRead && p.BHP.Left.Score > 0 && p.BHP.Right.Score > 0)))
                        << std::endl;
         }
     };
@@ -310,7 +311,7 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
         summaryStream << summary;
 
         std::ofstream counts(prefix + ".demux.counts");
-        counts << "IndexLeft\tIndexRight\tCounts" << std::endl;
+        counts << "IdxLeading\tIdxTrailing\tCounts" << std::endl;
         for (const auto& left_right_counts : barcodePairCounts)
             for (const auto& right_counts : left_right_counts.second)
                 counts << static_cast<int>(left_right_counts.first) << "\t"
@@ -432,7 +433,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
 
             if (zmwNum == -1) {
                 zmwNum = r.HoleNumber();
-            } else if (settings.PerSubread || (!settings.PerSubread && zmwNum != r.HoleNumber())) {
+            } else if (settings.PerRead || (!settings.PerRead && zmwNum != r.HoleNumber())) {
                 if (!records.empty()) chunk.emplace_back(std::move(records));
                 if (static_cast<int>(chunk.size()) >= settings.Chunks) {
                     workQueue.ProduceWith(Submit, chunk);
