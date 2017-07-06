@@ -63,7 +63,7 @@ struct LimaSettings
     size_t NumThreads;
     const int MaxScoredReads;
     const int Chunks;
-    const bool PerSubread;
+    const bool PerRead;
     const int MinPasses;
 
     /// Parses the provided CLI::Results and retrieves a defined set of options.

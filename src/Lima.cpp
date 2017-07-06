@@ -269,8 +269,8 @@ Summary::operator std::string() const
     summaryStream << "ZMWs below passes threshold   : " << BelowNumPasses << std::endl;
     summaryStream << std::endl;
     summaryStream << "For (A)" << std::endl;
-    summaryStream << "ZMWs symmetric                : " << SymmetricCounts << std::endl;
-    summaryStream << "ZMWs asymmetric               : " << AsymmetricCounts << std::endl;
+    summaryStream << "ZMWs w/ same barcode          : " << SymmetricCounts << std::endl;
+    summaryStream << "ZMWs w/ different barcodes    : " << AsymmetricCounts << std::endl;
     summaryStream << std::endl;
     summaryStream << "For (A)" << std::endl;
     summaryStream << "Reads above length            : " << SubreadAboveMinLength << std::endl;
