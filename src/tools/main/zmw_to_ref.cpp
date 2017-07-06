@@ -37,6 +37,7 @@
 
 #include <exception>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -267,23 +268,24 @@ static int Runner(const PacBio::CLI::Results& options)
     std::vector<std::pair<int, bool>> lengthsMatch;
     std::vector<std::pair<int, bool>> bqsMatch;
     std::map<int, std::vector<bool>> barcodeHits;
-    for (int i = 1; i <= numBC; ++i)
-        barcodeHits[i] = std::vector<bool>();
     std::map<std::string, int> zmwSubreads;
-    std::map<std::string, int> zmsSubreadsMeasured;
+    std::map<std::string, int> zmwSubreadsMeasured;
+    // a datastructure for each subread as a (barcodeCall, barcodeQuality) pair:
+    //   (holeNumber) -> (mappedRefId) -> [subread<bc, bq>]
+    std::map<std::string, std::map<std::string, std::vector<std::pair<int, int>>>> readsByZmw;
     for (const auto& r : *query) {
         if (r.Impl().IsSupplementaryAlignment()) continue;
         if (!r.Impl().IsPrimaryAlignment()) continue;
         if (!r.HasBarcodes() || !r.HasBarcodeQuality()) continue;
 
-        const auto zmwNum = r.MovieName() + "|" + std::to_string(r.HoleNumber());
+        const auto zmwNum = r.MovieName() + "/" + std::to_string(r.HoleNumber());
         const int length = r.ReferenceEnd() - r.ReferenceStart();
         ++zmwSubreads[zmwNum];
         if (length < minLength) {
             continue;
         }
 
-        if ((zmwMode && zmsSubreadsMeasured.find(zmwNum) == zmsSubreadsMeasured.cend()) ||
+        if ((zmwMode && zmwSubreadsMeasured.find(zmwNum) == zmwSubreadsMeasured.cend()) ||
             !zmwMode) {
 
             std::stringstream ss(r.ReferenceName());
@@ -303,10 +305,14 @@ static int Runner(const PacBio::CLI::Results& options)
             const std::string bcRef = barcodeMapping.at(idx);
 
             const bool positive = refName == bcRef;
-            barcodeHits[idx].emplace_back(positive);
-            std::cerr << positive << std::endl;
+            {
+                auto it = barcodeHits.find(idx);
+                if (it == barcodeHits.end()) it = barcodeHits.insert({idx, {}}).first;
+                it->second.emplace_back(positive);
+            }
+            // std::cerr << positive << std::endl;
 
-            ++zmsSubreadsMeasured[zmwNum];
+            ++zmwSubreadsMeasured[zmwNum];
 
             report << r.FullName() << ',' << r.HoleNumber() << ',' << r.ReferenceName() << ','
                    << r.ReferenceStart() << ',' << r.ReferenceEnd() << ',' << length << ','
@@ -316,6 +322,16 @@ static int Runner(const PacBio::CLI::Results& options)
 
             if (computeMinBQ) bqsMatch.emplace_back(std::make_pair(r.BarcodeQuality(), positive));
             if (nPercentiles > 1) lengthsMatch.emplace_back(std::make_pair(length, positive));
+
+            {
+                auto it = readsByZmw.find(zmwNum);
+                if (it == readsByZmw.end()) it = readsByZmw.insert({zmwNum, {}}).first;
+
+                auto it2 = it->second.find(refName);
+                if (it2 == it->second.end()) it2 = it->second.insert({refName, {}}).first;
+
+                it2->second.emplace_back(std::make_pair(idx, (int)r.BarcodeQuality()));
+            }
         }
     }
 
@@ -338,22 +354,79 @@ static int Runner(const PacBio::CLI::Results& options)
         }
     }
 
+    // a datastructure for each bc as the mode of the mappedRefId to subread:
+    //   (mappedRefId) -> [subread<bc, bq>]
+    std::map<std::string, std::vector<std::pair<int, int>>> countsByBc;
+    // (holeNumber) -> (mappedRefId) -> [subread<bc, bq>]
+    double byZmwAgreement = 0;
+    for (const auto& kv : readsByZmw) {
+        std::string maxBc;
+        int maxReads = 0;
+
+        // (mappedRefId) -> [subread<bc, bq>]
+        for (const auto& kv2 : kv.second) {
+            const int nReads = kv2.second.size();
+            if (nReads > maxReads) {
+                maxBc = kv2.first;
+                maxReads = nReads;
+            }
+        }
+
+        auto it = countsByBc.find(maxBc);
+        if (it == countsByBc.end()) it = countsByBc.insert({maxBc, {}}).first;
+
+        // everybody from this holeNumber goes into the mode barcode
+        int p = 0, n = 0;
+        for (const auto& kv2 : kv.second) {
+            for (const auto& r : kv2.second) {
+                it->second.emplace_back(r);
+                if (barcodeMapping.at(r.first) == maxBc) ++p;
+                ++n;
+            }
+        }
+        byZmwAgreement += (1.0 * p / n);
+    }
+    byZmwAgreement /= readsByZmw.size();
+
+    double byBcPPV = 0;
+    int truePositive2 = 0;
+    for (const auto& kv : countsByBc) {
+        int p = 0, n = 0;
+
+        for (const auto& r : kv.second) {
+            if (barcodeMapping.at(r.first) == kv.first) {
+                ++truePositive2;
+                ++p;
+            }
+            ++n;
+        }
+        byBcPPV += (1.0 * p / n);
+    }
+    byBcPPV /= countsByBc.size();
+
+    const int nSubreads =
+        std::accumulate(zmwSubreads.cbegin(), zmwSubreads.cend(), 0,
+                        [](const int sum, const auto& next) { return sum + next.second; });
+    const int nMeasured =
+        std::accumulate(zmwSubreadsMeasured.cbegin(), zmwSubreadsMeasured.cend(), 0,
+                        [](const int sum, const auto& next) { return sum + next.second; });
     // clang-format off
-    std::cerr << "#Subreads input        : "
-              << std::accumulate(zmwSubreads.cbegin(), zmwSubreads.cend(), 0,
-                                 [](const auto& sum, const auto& next) { return sum + next.second; })
-              << std::endl
+    std::cerr << "#Subreads input        : " << nSubreads << std::endl
               << "#Subreads BC & >" << std::setw(7) << std::left << std::to_string(minLength) + "bp" << ": "
-              << std::accumulate(zmsSubreadsMeasured.cbegin(), zmsSubreadsMeasured.cend(), 0,
-                                 [](const auto& sum, const auto& next) { return sum + next.second; })
-              << std::endl
+              << nMeasured << std::endl
               << std::endl
               << "#ZMWs input            : " << zmwSubreads.size() << std::endl
               << "#ZMWs BC & >" << std::setw(11) << std::left << std::to_string(minLength) + "bp"
-              << ": " << zmsSubreadsMeasured.size() << std::endl
+              << ": " << zmwSubreadsMeasured.size() << std::endl
               << std::endl;
     if (numBC > 0) std::cerr << "Barcode FN rate        : " << 1.0 * missingBC / numBC << std::endl;
-    std::cerr << "PPV                    : " << ppvSum / ppvCounter << std::endl;
+    std::cerr << "PPV                    : " << ppvSum / ppvCounter << std::endl
+              << std::endl
+              << "%Mode/zmw              : " << byZmwAgreement << std::endl
+              << "PPV/bc                 : " << byBcPPV << std::endl
+    //           << "PPV/sr1                : " << (1.0 * truePositive / (counter + shortCounter)) << std::endl
+              << "PPV/sr2                : " << (1.0 * truePositive2 / nSubreads) << std::endl
+              << "#Refs                  : " << countsByBc.size() << std::endl;
     // clang-format on
 
     // Determine minimal BQ needed for given minimal PPV
