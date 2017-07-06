@@ -9,6 +9,7 @@
 ## TOOLS
 
 - [Demultiplex PacBio Reads `lima`](doc/LIMA.md)
+- [Validate Barcodes `zulu`](doc/ZULU.md)
 - [Extract ZMW Stats `zmw_stats`](doc/ZMW_STATS.md)
 
 ## INSTALL
