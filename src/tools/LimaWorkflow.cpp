@@ -57,6 +57,7 @@
 #include <pbbam/DataSet.h>
 #include <pbbam/EntireFileQuery.h>
 #include <pbbam/FastaReader.h>
+#include <pbbam/PbiBuilder.h>
 #include <pbbam/PbiFilter.h>
 #include <pbbam/PbiFilterQuery.h>
 
@@ -236,7 +237,8 @@ struct TaskResult
 };
 
 void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
-                  std::unique_ptr<BAM::BamWriter>& bamWriter, const LimaSettings& settings,
+                  std::unique_ptr<BAM::BamWriter>& bamWriter,
+                  std::unique_ptr<BAM::PbiBuilder>& pbiWriter, const LimaSettings& settings,
                   const std::string& prefix, Summary& summary, BAM::BamHeader& header)
 {
     std::map<uint16_t, std::map<uint16_t, int>> barcodePairCounts;
@@ -272,7 +274,9 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
                                 std::move(r));
                     else if (!settings.NoBam)
                         for (auto& r : p.Records) {
+                            int64_t vOffset;
                             bamWriter->Write(r);
+                            pbiWriter->AddRecord(r, vOffset);
                         }
                     if (!settings.NoReports) ++barcodePairCounts[leftIdx][rightIdx];
                 }
@@ -300,9 +304,18 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
             fileName << "-";
             fileName << static_cast<int>(bc_records.first.second);
             fileName << ".demux.bam";
-            BAM::BamWriter bamWriter(fileName.str(), header);
-            for (const auto& r : bc_records.second)
-                bamWriter.Write(r);
+            BAM::BamWriter bamWriter(fileName.str(), header,
+                                     BAM::BamWriter::CompressionLevel::DefaultCompression,
+                                     settings.NumThreads);
+            fileName << ".pbi";
+            BAM::PbiBuilder pbiWriter(fileName.str(),
+                                      BAM::BamWriter::CompressionLevel::DefaultCompression,
+                                      settings.NumThreads);
+            int64_t vOffset;
+            for (const auto& r : bc_records.second) {
+                bamWriter.Write(r, &vOffset);
+                pbiWriter.AddRecord(r, vOffset);
+            }
         }
     }
 
@@ -330,11 +343,13 @@ void LimaWorkflow::Process(const LimaSettings& settings,
 
     // Single writer for non-split mode
     std::unique_ptr<BAM::BamWriter> bamWriter;
+    std::unique_ptr<BAM::PbiBuilder> pbiWriter;
     // Header can be used for split mode
     BAM::BamHeader header;
     // Treat every dataset as an individual entity
     for (const auto& datasetPath : datasetPaths) {
         bamWriter.reset(nullptr);
+        pbiWriter.reset(nullptr);
         std::atomic_int threadCount(0);
 
         std::string prefix = AdvancedFileUtils::FilePrefixInfix(datasetPath);
@@ -343,7 +358,8 @@ void LimaWorkflow::Process(const LimaSettings& settings,
         PacBio::Parallel::WorkQueue<std::vector<TaskResult>> workQueue(settings.NumThreads);
         std::future<void> workerThread =
             std::async(std::launch::async, WorkerThread, std::ref(workQueue), std::ref(bamWriter),
-                       std::ref(settings), std::ref(prefix), std::ref(summary), std::ref(header));
+                       std::ref(pbiWriter), std::ref(settings), std::ref(prefix), std::ref(summary),
+                       std::ref(header));
         // Get a query to the underlying BAM files, respecting filters
         auto query = AdvancedFileUtils::BamQuery(datasetPath);
         auto Submit = [&barcodes, &settings, &summary, &threadCount,
@@ -424,12 +440,17 @@ void LimaWorkflow::Process(const LimaSettings& settings,
         std::vector<BAM::BamRecord> records;
         int chunkNum = 0;
         for (auto& r : *query) {
-            if (!bamWriter)
+            if (!bamWriter && !pbiWriter) {
                 if (!settings.NoBam && !settings.SplitBam) {
                     bamWriter.reset(new BAM::BamWriter(
                         prefix + ".demux.bam", r.Header().DeepCopy(),
-                        BAM::BamWriter::CompressionLevel::CompressionLevel_1, settings.NumThreads));
+                        BAM::BamWriter::CompressionLevel::DefaultCompression, settings.NumThreads));
+                    pbiWriter.reset(
+                        new BAM::PbiBuilder(prefix + ".demux.bam.pbi",
+                                            BAM::PbiBuilder::CompressionLevel::DefaultCompression,
+                                            settings.NumThreads));
                 }
+            }
             if (settings.SplitBam) header = r.Header().DeepCopy();
 
             if (zmwNum == -1) {
