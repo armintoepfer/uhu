@@ -53,14 +53,16 @@ struct LimaWorkflow
     static void Process(
         const LimaSettings& settings,
         const std::vector<std::pair<std::string, BAM::DataSet::TypeEnum>>& datasetPaths,
-        const std::vector<Barcode>& barcodes, const std::string& barcodePath);
+        const std::vector<Barcode>& barcodes,
+        const std::pair<std::string, BAM::DataSet::TypeEnum>& barcodePath);
 
     static int Runner(const PacBio::CLI::Results& options);
 
     static void ParsePositionalArgs(
         const std::vector<std::string>& args,
         std::vector<std::pair<std::string, BAM::DataSet::TypeEnum>>* datasetPaths,
-        std::vector<Barcode>* barcodes, std::string* barcodePath);
+        std::vector<Barcode>* barcodes,
+        std::pair<std::string, BAM::DataSet::TypeEnum>* barcodePath);
 };
 }
 }  // ::PacBio::Lima
