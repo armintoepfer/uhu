@@ -236,7 +236,7 @@ struct TaskResult
 };
 
 void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
-                  std::unique_ptr<BAM::BamWriter>& writer, const LimaSettings& settings,
+                  std::unique_ptr<BAM::BamWriter>& bamWriter, const LimaSettings& settings,
                   const std::string& prefix, Summary& summary, BAM::BamHeader& header)
 {
     std::map<uint16_t, std::map<uint16_t, int>> barcodePairCounts;
@@ -272,7 +272,7 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
                                 std::move(r));
                     else if (!settings.NoBam)
                         for (auto& r : p.Records) {
-                            writer->Write(r);
+                            bamWriter->Write(r);
                         }
                     if (!settings.NoReports) ++barcodePairCounts[leftIdx][rightIdx];
                 }
@@ -300,9 +300,9 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
             fileName << "-";
             fileName << static_cast<int>(bc_records.first.second);
             fileName << ".demux.bam";
-            BAM::BamWriter writer(fileName.str(), header);
+            BAM::BamWriter bamWriter(fileName.str(), header);
             for (const auto& r : bc_records.second)
-                writer.Write(r);
+                bamWriter.Write(r);
         }
     }
 
@@ -329,12 +329,12 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                                     -settings.BranchPenalty);
 
     // Single writer for non-split mode
-    std::unique_ptr<BAM::BamWriter> writer;
+    std::unique_ptr<BAM::BamWriter> bamWriter;
     // Header can be used for split mode
     BAM::BamHeader header;
     // Treat every dataset as an individual entity
     for (const auto& datasetPath : datasetPaths) {
-        writer.reset(nullptr);
+        bamWriter.reset(nullptr);
         std::atomic_int threadCount(0);
 
         std::string prefix = AdvancedFileUtils::FilePrefixInfix(datasetPath);
@@ -342,7 +342,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
         // Individual queue per dataset
         PacBio::Parallel::WorkQueue<std::vector<TaskResult>> workQueue(settings.NumThreads);
         std::future<void> workerThread =
-            std::async(std::launch::async, WorkerThread, std::ref(workQueue), std::ref(writer),
+            std::async(std::launch::async, WorkerThread, std::ref(workQueue), std::ref(bamWriter),
                        std::ref(settings), std::ref(prefix), std::ref(summary), std::ref(header));
         // Get a query to the underlying BAM files, respecting filters
         auto query = AdvancedFileUtils::BamQuery(datasetPath);
@@ -424,11 +424,12 @@ void LimaWorkflow::Process(const LimaSettings& settings,
         std::vector<BAM::BamRecord> records;
         int chunkNum = 0;
         for (auto& r : *query) {
-            if (!writer)
-                if (!settings.NoBam && !settings.SplitBam)
-                    writer.reset(new BAM::BamWriter(
+            if (!bamWriter)
+                if (!settings.NoBam && !settings.SplitBam) {
+                    bamWriter.reset(new BAM::BamWriter(
                         prefix + ".demux.bam", r.Header().DeepCopy(),
-                        BAM::BamWriter::CompressionLevel::CompressionLevel_0, settings.NumThreads));
+                        BAM::BamWriter::CompressionLevel::CompressionLevel_1, settings.NumThreads));
+                }
             if (settings.SplitBam) header = r.Header().DeepCopy();
 
             if (zmwNum == -1) {
