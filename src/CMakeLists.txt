@@ -72,5 +72,5 @@ if (UHU_build_bin)
 
     create_exe(lima)
     create_exe(zmw_stats)
-    create_exe(zmw_to_ref)
+    create_exe(zulu)
 endif()

@@ -1,5 +1,5 @@
 <h1 align="center">
-    zulu - Barcode validator
+    zulu - Barcode Validation Tool
 </h1>
 
 <p align="center">

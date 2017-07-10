@@ -64,7 +64,7 @@
 #include <pbbam/PbiIndex.h>
 
 namespace PacBio {
-namespace Cleric {
+namespace Zulu {
 namespace OptionNames {
 using PlainOption = Data::PlainOption;
 // clang-format off
@@ -100,14 +100,6 @@ const PlainOption Tailed{
     CLI::Option::BoolType()
 };
 
-const PlainOption ZMW{
-    "zmw",
-    {"z", "zmw"},
-    "Zmw",
-    "Flag to analyze only one subread per ZMW.",
-    CLI::Option::BoolType()
-};
-
 const PlainOption NumBC{
     "num_bc",
     {"b","num-barcodes"},
@@ -131,7 +123,7 @@ static PacBio::CLI::Interface CreateCLI()
 {
     using Option = PacBio::CLI::Option;
 
-    PacBio::CLI::Interface i{"zmw_to_ref", "Maps Record to Reference", "0.1.0"};
+    PacBio::CLI::Interface i{"Zulu", "Barcode Validation Tool", "0.2.0"};
 
     i.AddHelpOption();     // use built-in help output
     i.AddVersionOption();  // use built-in version output
@@ -144,7 +136,6 @@ static PacBio::CLI::Interface CreateCLI()
         OptionNames::MinLength,
         OptionNames::Percentiles,
         OptionNames::Tailed,
-        OptionNames::ZMW,
         OptionNames::NumBC,
         OptionNames::MinPPV
     });
@@ -423,5 +414,5 @@ static int Runner(const PacBio::CLI::Results& options)
 // Entry point
 int main(int argc, char* argv[])
 {
-    return PacBio::CLI::Run(argc, argv, PacBio::Cleric::CreateCLI(), &PacBio::Cleric::Runner);
+    return PacBio::CLI::Run(argc, argv, PacBio::Zulu::CreateCLI(), &PacBio::Zulu::Runner);
 }
