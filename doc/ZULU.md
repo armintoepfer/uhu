@@ -46,14 +46,16 @@ Following an exemplary output with explanations:
     #ZMWs input            : 980   <- All ZMWs in the input file
     #ZMWs BC & >1500bp     : 906   <- ZMWs with barcoded and above min-length subreads
 
-    PPV                    : 0.91  <- Positive predictive value
+    PPV                    : 0.91  <- Positive predictive value avg over all barcodes of all subreads
+
+    %Mode/zmw              : 0.86  <- Percentage of subreads agreeing to the mode of the ZMW
+    PPV/bc                 : 0.85  <- PPV normalized by barcode and ZMW
+    PPV/sr                 : 0.87  <- PPV normalized by barcode and subreads
+    #Refs                  : 49    <- Number of references found
 
 ## Advanced Options
 ### Bam2bam Input
 If you demultiplexed using bam2bam and your library was tailed or asymmetric use `--tailed`
-
-### Compute PPV per ZMW
-Take one and only one subread per ZMW `--zmw`
 
 ### Compute False Negative rate
 Provide the number of expectet barcode IDs, e.g. 384, `--num-barcodes 384`
