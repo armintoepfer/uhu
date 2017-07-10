@@ -334,7 +334,8 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
     }
 }
 
-void CreateDataset(const std::string& prefix, BAM::DataSet::TypeEnum type)
+void CreateDataset(const std::string& prefix, const BAM::DataSet::TypeEnum& type,
+                   const std::pair<std::string, BAM::DataSet::TypeEnum>& barcodePath)
 {
     // Write Dataset
     using BAM::DataSet;
@@ -359,6 +360,28 @@ void CreateDataset(const std::string& prefix, BAM::DataSet::TypeEnum type)
     BAM::FileIndex pbi("PacBio.Index.PacBioIndex", prefix + ".demux.bam.pbi");
     resource.FileIndices().Add(pbi);
 
+    switch (barcodePath.second) {
+        case BAM::DataSet::TypeEnum::BARCODE: {
+            BAM::DataSet bs(barcodePath.first);
+            BAM::ExternalResource barcodeResource("PacBio.DataSet.BarcodeSet", barcodePath.first);
+            barcodeResource.Name("Barcodes dataset")
+                .Description("Points to the barcodeset.xml file.");
+            barcodeResource.UniqueId(bs.UniqueId());
+            resource.ExternalResources().Add(barcodeResource);
+            break;
+        }
+        case BAM::DataSet::TypeEnum::REFERENCE: {
+            BAM::ExternalResource barcodeResource("PacBio.BarcodeFile.BarcodeFastaFile",
+                                                  barcodePath.first);
+            barcodeResource.Name("Barcodes FASTA")
+                .Description("Points to the barcodes.fasta file.");
+            resource.ExternalResources().Add(barcodeResource);
+            break;
+        }
+        default:
+            throw std::runtime_error("Unsupported barcode input type");
+    }
+
     ds.ExternalResources().Add(resource);
     ds.Name(ds.TimeStampedName());
 
@@ -369,10 +392,11 @@ void CreateDataset(const std::string& prefix, BAM::DataSet::TypeEnum type)
 void LimaWorkflow::Process(
     const LimaSettings& settings,
     const std::vector<std::pair<std::string, BAM::DataSet::TypeEnum>>& datasetPaths,
-    const std::vector<Barcode>& barcodes, const std::string& barcodePath)
+    const std::vector<Barcode>& barcodes,
+    const std::pair<std::string, BAM::DataSet::TypeEnum>& barcodePath)
 {
     auto BarcodeHash = [&barcodePath]() {
-        std::ifstream barcodeFile(barcodePath, std::ios::binary);
+        std::ifstream barcodeFile(barcodePath.first, std::ios::binary);
         barcodeFile.seekg(0, std::ios::end);
         std::streamsize size = barcodeFile.tellg();
         barcodeFile.seekg(0, std::ios::beg);
@@ -494,7 +518,7 @@ void LimaWorkflow::Process(
             header = r.Header().DeepCopy();
             auto readGroups = header.ReadGroups();
             for (auto& rg : readGroups) {
-                rg.BarcodeData(barcodePath, barcodeHash, barcodes.size(),
+                rg.BarcodeData(barcodePath.first, barcodeHash, barcodes.size(),
                                settings.KeepSymmetric ? BAM::BarcodeModeType::SYMMETRIC
                                                       : BAM::BarcodeModeType::ASYMMETRIC,
                                BAM::BarcodeQualityType::SCORE);
@@ -509,7 +533,7 @@ void LimaWorkflow::Process(
                         new BAM::PbiBuilder(prefix + ".demux.bam.pbi",
                                             BAM::PbiBuilder::CompressionLevel::DefaultCompression,
                                             settings.NumThreads));
-                    CreateDataset(prefix, datasetPath_type.second);
+                    CreateDataset(prefix, datasetPath_type.second, barcodePath);
                 }
             }
 
@@ -547,7 +571,7 @@ int LimaWorkflow::Runner(const PacBio::CLI::Results& options)
     const LimaSettings settings(options);
     std::vector<std::pair<std::string, BAM::DataSet::TypeEnum>> datasetPaths;
     std::vector<Barcode> barcodes;
-    std::string barcodePath;
+    std::pair<std::string, BAM::DataSet::TypeEnum> barcodePath;
     ParsePositionalArgs(options.PositionalArguments(), &datasetPaths, &barcodes, &barcodePath);
 
     Process(settings, datasetPaths, barcodes, barcodePath);
@@ -558,9 +582,9 @@ int LimaWorkflow::Runner(const PacBio::CLI::Results& options)
 void LimaWorkflow::ParsePositionalArgs(
     const std::vector<std::string>& args,
     std::vector<std::pair<std::string, BAM::DataSet::TypeEnum>>* datasetPaths,
-    std::vector<Barcode>* barcodes, std::string* barcodePath)
+    std::vector<Barcode>* barcodes, std::pair<std::string, BAM::DataSet::TypeEnum>* barcodePath)
 {
-    std::vector<std::string> fastaPaths;
+    bool barcodeFound = false;
     for (const auto& i : args) {
         const bool fileExist = PacBio::Utility::FileExists(i);
         if (!fileExist) {
@@ -577,7 +601,10 @@ void LimaWorkflow::ParsePositionalArgs(
                 break;
             case BAM::DataSet::TypeEnum::BARCODE:
             case BAM::DataSet::TypeEnum::REFERENCE:
-                fastaPaths.push_back(i);
+                if (barcodeFound)
+                    throw std::runtime_error("Please provide exactly one barcode file!");
+                barcodeFound = true;
+                *barcodePath = std::make_pair(i, ds.Type());
                 break;
             default:
                 throw std::runtime_error("Unsupported input file: " + i + " of type " +
@@ -585,18 +612,12 @@ void LimaWorkflow::ParsePositionalArgs(
         }
     }
 
-    if (fastaPaths.size() != 1)
-        throw std::runtime_error("Please provide exactly one barcode file!");
-
-    for (const auto& fasta : fastaPaths) {
-        *barcodePath = fasta;
-        BAM::DataSet ds(fasta);
-        for (const auto& fastaFile : ds.FastaFiles()) {
-            BAM::FastaReader msaReader(fastaFile);
-            BAM::FastaSequence f;
-            while (msaReader.GetNext(f)) {
-                barcodes->emplace_back(f.Name(), f.Bases());
-            }
+    BAM::DataSet ds(barcodePath->first);
+    for (const auto& file : ds.FastaFiles()) {
+        BAM::FastaReader msaReader(file);
+        BAM::FastaSequence f;
+        while (msaReader.GetNext(f)) {
+            barcodes->emplace_back(f.Name(), f.Bases());
         }
     }
 }
