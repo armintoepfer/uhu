@@ -57,6 +57,7 @@
 #include <pbbam/DataSet.h>
 #include <pbbam/EntireFileQuery.h>
 #include <pbbam/FastaReader.h>
+#include <pbbam/MD5.h>
 #include <pbbam/PbiBuilder.h>
 #include <pbbam/PbiFilter.h>
 #include <pbbam/PbiFilterQuery.h>
@@ -309,7 +310,7 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
                                      settings.NumThreads);
             fileName << ".pbi";
             BAM::PbiBuilder pbiWriter(fileName.str(),
-                                      BAM::BamWriter::CompressionLevel::DefaultCompression,
+                                      BAM::PbiBuilder::CompressionLevel::DefaultCompression,
                                       settings.NumThreads);
             int64_t vOffset = 0;
             for (const auto& r : bc_records.second) {
@@ -368,11 +369,28 @@ void CreateDataset(const std::string& prefix, BAM::DataSet::TypeEnum type)
 void LimaWorkflow::Process(
     const LimaSettings& settings,
     const std::vector<std::pair<std::string, BAM::DataSet::TypeEnum>>& datasetPaths,
-    const std::vector<Barcode>& barcodes)
+    const std::vector<Barcode>& barcodes, const std::string& barcodePath)
 {
+    auto BarcodeHash = [&barcodePath]() {
+        std::ifstream barcodeFile(barcodePath, std::ios::binary);
+        barcodeFile.seekg(0, std::ios::end);
+        std::streamsize size = barcodeFile.tellg();
+        barcodeFile.seekg(0, std::ios::beg);
+
+        std::vector<char> buffer(size);
+        if (!barcodeFile.read(buffer.data(), size)) {
+            std::cerr << "Could not read barcodes for hashing" << std::endl;
+        }
+
+        std::string fileContent(buffer.begin(), buffer.end());
+        return BAM::MD5Hash(fileContent);
+    };
+
     AlignParameters alignParameters(settings.MatchScore, -settings.MismatchPenalty,
                                     -settings.DeletionPenalty, -settings.InsertionPenalty,
                                     -settings.BranchPenalty);
+
+    const std::string barcodeHash = BarcodeHash();
 
     // Single writer for non-split mode
     std::unique_ptr<BAM::BamWriter> bamWriter;
@@ -473,10 +491,19 @@ void LimaWorkflow::Process(
         std::vector<BAM::BamRecord> records;
         int chunkNum = 0;
         for (auto& r : *query) {
+            header = r.Header().DeepCopy();
+            auto readGroups = header.ReadGroups();
+            for (auto& rg : readGroups) {
+                rg.BarcodeData(barcodePath, barcodeHash, barcodes.size(),
+                               settings.KeepSymmetric ? BAM::BarcodeModeType::SYMMETRIC
+                                                      : BAM::BarcodeModeType::ASYMMETRIC,
+                               BAM::BarcodeQualityType::SCORE);
+            }
+            header.ReadGroups(readGroups);
             if (!bamWriter && !pbiWriter) {
                 if (!settings.NoBam && !settings.SplitBam) {
                     bamWriter.reset(new BAM::BamWriter(
-                        prefix + ".demux.bam", r.Header().DeepCopy(),
+                        prefix + ".demux.bam", header,
                         BAM::BamWriter::CompressionLevel::DefaultCompression, settings.NumThreads));
                     pbiWriter.reset(
                         new BAM::PbiBuilder(prefix + ".demux.bam.pbi",
@@ -485,7 +512,6 @@ void LimaWorkflow::Process(
                     CreateDataset(prefix, datasetPath_type.second);
                 }
             }
-            if (settings.SplitBam) header = r.Header().DeepCopy();
 
             if (zmwNum == -1) {
                 zmwNum = r.HoleNumber();
@@ -521,9 +547,10 @@ int LimaWorkflow::Runner(const PacBio::CLI::Results& options)
     const LimaSettings settings(options);
     std::vector<std::pair<std::string, BAM::DataSet::TypeEnum>> datasetPaths;
     std::vector<Barcode> barcodes;
-    ParsePositionalArgs(options.PositionalArguments(), &datasetPaths, &barcodes);
+    std::string barcodePath;
+    ParsePositionalArgs(options.PositionalArguments(), &datasetPaths, &barcodes, &barcodePath);
 
-    Process(settings, datasetPaths, barcodes);
+    Process(settings, datasetPaths, barcodes, barcodePath);
 
     return EXIT_SUCCESS;
 }
@@ -531,7 +558,7 @@ int LimaWorkflow::Runner(const PacBio::CLI::Results& options)
 void LimaWorkflow::ParsePositionalArgs(
     const std::vector<std::string>& args,
     std::vector<std::pair<std::string, BAM::DataSet::TypeEnum>>* datasetPaths,
-    std::vector<Barcode>* barcodes)
+    std::vector<Barcode>* barcodes, std::string* barcodePath)
 {
     std::vector<std::string> fastaPaths;
     for (const auto& i : args) {
@@ -558,7 +585,11 @@ void LimaWorkflow::ParsePositionalArgs(
         }
     }
 
+    if (fastaPaths.size() != 1)
+        throw std::runtime_error("Please provide exactly one barcode file!");
+
     for (const auto& fasta : fastaPaths) {
+        *barcodePath = fasta;
         BAM::DataSet ds(fasta);
         for (const auto& fastaFile : ds.FastaFiles()) {
             BAM::FastaReader msaReader(fastaFile);

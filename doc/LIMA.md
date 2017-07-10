@@ -133,9 +133,6 @@ The provided mean score is the mean of both normalizated barcode scores.
         -I,--insertion-penalty  Insertion penalty.
         -X,--branch-penalty     Branch penalty.
 
-## Missing Features
- * bam2bam-like BAM barcode header line
-
 ## FAQ
 ### Why *lima* and not bam2bam?
 *Lima* has been born out of the need for a better user experience. Both use the
