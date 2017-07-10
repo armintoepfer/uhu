@@ -171,7 +171,6 @@ static int Runner(const PacBio::CLI::Results& options)
     const int numBC = options[OptionNames::NumBC];
     const double minPPV = options[OptionNames::MinPPV];
     const bool tailed = options[OptionNames::Tailed];
-    const bool zmwMode = options[OptionNames::ZMW];
     const bool computeMinBQ = minPPV != 0;
 
     if (mapping.empty()) {
@@ -243,31 +242,26 @@ static int Runner(const PacBio::CLI::Results& options)
             continue;
         }
 
-        if ((zmwMode && zmwSubreadsMeasured.find(zmwNum) == zmwSubreadsMeasured.cend()) ||
-            !zmwMode) {
-            const std::string refName = r.ReferenceName();
+        const std::string refName = r.ReferenceName();
 
-            const int idx =
-                tailed ? std::floor(r.BarcodeForward() / 2.0) + 1 : r.BarcodeForward() + 1;
-            if (barcodeMapping.find(idx) == barcodeMapping.cend()) continue;
-            const std::string bcRef = barcodeMapping.at(idx);
+        const int idx = tailed ? std::floor(r.BarcodeForward() / 2.0) + 1 : r.BarcodeForward() + 1;
+        if (barcodeMapping.find(idx) == barcodeMapping.cend()) continue;
+        const std::string bcRef = barcodeMapping.at(idx);
 
-            const bool positive = refName == bcRef;
-            barcodeHits[idx].emplace_back(positive);
+        const bool positive = refName == bcRef;
+        barcodeHits[idx].emplace_back(positive);
 
-            ++zmwSubreadsMeasured[zmwNum];
+        ++zmwSubreadsMeasured[zmwNum];
 
-            report << r.FullName() << ',' << r.HoleNumber() << ',' << r.ReferenceName() << ','
-                   << r.ReferenceStart() << ',' << r.ReferenceEnd() << ',' << length << ','
-                   << (int)r.MapQuality() << ',' << refName << ',' << bcRef << ','
-                   << r.BarcodeForward() << ',' << r.BarcodeReverse() << ','
-                   << (int)r.BarcodeQuality() << std::endl;
+        report << r.FullName() << ',' << r.HoleNumber() << ',' << r.ReferenceName() << ','
+               << r.ReferenceStart() << ',' << r.ReferenceEnd() << ',' << length << ','
+               << (int)r.MapQuality() << ',' << refName << ',' << bcRef << ',' << r.BarcodeForward()
+               << ',' << r.BarcodeReverse() << ',' << (int)r.BarcodeQuality() << std::endl;
 
-            if (computeMinBQ) bqsMatch.emplace_back(std::make_pair(r.BarcodeQuality(), positive));
-            if (nPercentiles > 1) lengthsMatch.emplace_back(std::make_pair(length, positive));
+        if (computeMinBQ) bqsMatch.emplace_back(std::make_pair(r.BarcodeQuality(), positive));
+        if (nPercentiles > 1) lengthsMatch.emplace_back(std::make_pair(length, positive));
 
-            readsByZmw[zmwNum][refName].emplace_back(std::make_pair(idx, (int)r.BarcodeQuality()));
-        }
+        readsByZmw[zmwNum][refName].emplace_back(std::make_pair(idx, (int)r.BarcodeQuality()));
     }
 
     double ppvSum = 0.0;
@@ -352,12 +346,12 @@ static int Runner(const PacBio::CLI::Results& options)
               << ": " << zmwSubreadsMeasured.size() << std::endl
               << std::endl;
     if (numBC > 0) std::cerr << "Barcode FN rate        : " << 1.0 * missingBC / numBC << std::endl;
-    std::cerr << "PPV                    : " << ppvSum / ppvCounter << std::endl
+    std::cerr << "PPV                    : " << std::round(1000.0 * ppvSum / ppvCounter) / 1000.0 << std::endl
               << std::endl
-              << "%Mode/zmw              : " << byZmwAgreement << std::endl
-              << "PPV/bc                 : " << byBcPPV << std::endl
-              << "PPV/sr                 : " << (1.0 * truePositive2 / nMeasured) << std::endl
-              << "#Refs                  : " << countsByRefName.size() << std::endl;
+              << "%Mode/zmw              : " << std::round(1000.0 * byZmwAgreement) / 1000.0 << std::endl
+              << "PPV/bc                 : " << std::round(1000.0 * byBcPPV) / 1000.0 << std::endl
+              << "PPV/sr                 : " << std::round(1000.0 * (1.0 * truePositive2 / nMeasured)) / 1000.0 << std::endl
+              << "#Refs                  : " << std::round(1000.0 * countsByRefName.size()) / 1000.0 << std::endl;
     // clang-format on
 
     // Determine minimal BQ needed for given minimal PPV
