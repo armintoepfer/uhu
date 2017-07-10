@@ -274,7 +274,7 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
                                 std::move(r));
                     else if (!settings.NoBam)
                         for (auto& r : p.Records) {
-                            int64_t vOffset;
+                            int64_t vOffset = 0;
                             bamWriter->Write(r);
                             pbiWriter->AddRecord(r, vOffset);
                         }
@@ -311,7 +311,7 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
             BAM::PbiBuilder pbiWriter(fileName.str(),
                                       BAM::BamWriter::CompressionLevel::DefaultCompression,
                                       settings.NumThreads);
-            int64_t vOffset;
+            int64_t vOffset = 0;
             for (const auto& r : bc_records.second) {
                 bamWriter.Write(r, &vOffset);
                 pbiWriter.AddRecord(r, vOffset);
@@ -333,9 +333,42 @@ void WorkerThread(PacBio::Parallel::WorkQueue<std::vector<TaskResult>>& queue,
     }
 }
 
-void LimaWorkflow::Process(const LimaSettings& settings,
-                           const std::vector<std::string>& datasetPaths,
-                           const std::vector<Barcode>& barcodes)
+void CreateDataset(const std::string& prefix, BAM::DataSet::TypeEnum type)
+{
+    // Write Dataset
+    using BAM::DataSet;
+    std::string metatype;
+    std::string outputType;
+    switch (type) {
+        case BAM::DataSet::TypeEnum::SUBREAD:
+            metatype = "PacBio.ConsensusReadFile.ConsensusReadBamFile";
+            outputType = "consensusreadset";
+            break;
+        case BAM::DataSet::TypeEnum::CONSENSUS_READ:
+            metatype = "PacBio.ConsensusReadFile.ConsensusReadBamFile";
+            outputType = "subreadset";
+            break;
+        default:
+            throw std::runtime_error("Unsupported input type");
+    }
+    DataSet ds(type);
+
+    BAM::ExternalResource resource(metatype, prefix + ".demux.bam");
+
+    BAM::FileIndex pbi("PacBio.Index.PacBioIndex", prefix + ".demux.bam.pbi");
+    resource.FileIndices().Add(pbi);
+
+    ds.ExternalResources().Add(resource);
+    ds.Name(ds.TimeStampedName());
+
+    std::ofstream dsOut(prefix + ".demux." + outputType + ".xml");
+    ds.SaveToStream(dsOut);
+}
+
+void LimaWorkflow::Process(
+    const LimaSettings& settings,
+    const std::vector<std::pair<std::string, BAM::DataSet::TypeEnum>>& datasetPaths,
+    const std::vector<Barcode>& barcodes)
 {
     AlignParameters alignParameters(settings.MatchScore, -settings.MismatchPenalty,
                                     -settings.DeletionPenalty, -settings.InsertionPenalty,
@@ -347,12 +380,12 @@ void LimaWorkflow::Process(const LimaSettings& settings,
     // Header can be used for split mode
     BAM::BamHeader header;
     // Treat every dataset as an individual entity
-    for (const auto& datasetPath : datasetPaths) {
+    for (const auto& datasetPath_type : datasetPaths) {
         bamWriter.reset(nullptr);
         pbiWriter.reset(nullptr);
         std::atomic_int threadCount(0);
 
-        std::string prefix = AdvancedFileUtils::FilePrefixInfix(datasetPath);
+        std::string prefix = AdvancedFileUtils::FilePrefixInfix(datasetPath_type.first);
         Summary summary;
         // Individual queue per dataset
         PacBio::Parallel::WorkQueue<std::vector<TaskResult>> workQueue(settings.NumThreads);
@@ -361,7 +394,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                        std::ref(pbiWriter), std::ref(settings), std::ref(prefix), std::ref(summary),
                        std::ref(header));
         // Get a query to the underlying BAM files, respecting filters
-        auto query = AdvancedFileUtils::BamQuery(datasetPath);
+        auto query = AdvancedFileUtils::BamQuery(datasetPath_type.first);
         auto Submit = [&barcodes, &settings, &summary, &threadCount,
                        &alignParameters](std::vector<std::vector<BAM::BamRecord>> chunk) {
             ++threadCount;
@@ -449,6 +482,7 @@ void LimaWorkflow::Process(const LimaSettings& settings,
                         new BAM::PbiBuilder(prefix + ".demux.bam.pbi",
                                             BAM::PbiBuilder::CompressionLevel::DefaultCompression,
                                             settings.NumThreads));
+                    CreateDataset(prefix, datasetPath_type.second);
                 }
             }
             if (settings.SplitBam) header = r.Header().DeepCopy();
@@ -485,7 +519,7 @@ int LimaWorkflow::Runner(const PacBio::CLI::Results& options)
     }
 
     const LimaSettings settings(options);
-    std::vector<std::string> datasetPaths;
+    std::vector<std::pair<std::string, BAM::DataSet::TypeEnum>> datasetPaths;
     std::vector<Barcode> barcodes;
     ParsePositionalArgs(options.PositionalArguments(), &datasetPaths, &barcodes);
 
@@ -494,9 +528,10 @@ int LimaWorkflow::Runner(const PacBio::CLI::Results& options)
     return EXIT_SUCCESS;
 }
 
-void LimaWorkflow::ParsePositionalArgs(const std::vector<std::string>& args,
-                                       std::vector<std::string>* datasetPaths,
-                                       std::vector<Barcode>* barcodes)
+void LimaWorkflow::ParsePositionalArgs(
+    const std::vector<std::string>& args,
+    std::vector<std::pair<std::string, BAM::DataSet::TypeEnum>>* datasetPaths,
+    std::vector<Barcode>* barcodes)
 {
     std::vector<std::string> fastaPaths;
     for (const auto& i : args) {
@@ -511,7 +546,7 @@ void LimaWorkflow::ParsePositionalArgs(const std::vector<std::string>& args,
             case BAM::DataSet::TypeEnum::ALIGNMENT:
             case BAM::DataSet::TypeEnum::CONSENSUS_ALIGNMENT:
             case BAM::DataSet::TypeEnum::CONSENSUS_READ:
-                datasetPaths->push_back(i);
+                datasetPaths->emplace_back(i, ds.Type());
                 break;
             case BAM::DataSet::TypeEnum::BARCODE:
             case BAM::DataSet::TypeEnum::REFERENCE:
