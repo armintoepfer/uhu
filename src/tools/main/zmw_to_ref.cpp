@@ -305,12 +305,7 @@ static int Runner(const PacBio::CLI::Results& options)
             const std::string bcRef = barcodeMapping.at(idx);
 
             const bool positive = refName == bcRef;
-            {
-                auto it = barcodeHits.find(idx);
-                if (it == barcodeHits.end()) it = barcodeHits.insert({idx, {}}).first;
-                it->second.emplace_back(positive);
-            }
-            // std::cerr << positive << std::endl;
+            barcodeHits[idx].emplace_back(positive);
 
             ++zmwSubreadsMeasured[zmwNum];
 
@@ -323,15 +318,7 @@ static int Runner(const PacBio::CLI::Results& options)
             if (computeMinBQ) bqsMatch.emplace_back(std::make_pair(r.BarcodeQuality(), positive));
             if (nPercentiles > 1) lengthsMatch.emplace_back(std::make_pair(length, positive));
 
-            {
-                auto it = readsByZmw.find(zmwNum);
-                if (it == readsByZmw.end()) it = readsByZmw.insert({zmwNum, {}}).first;
-
-                auto it2 = it->second.find(refName);
-                if (it2 == it->second.end()) it2 = it->second.insert({refName, {}}).first;
-
-                it2->second.emplace_back(std::make_pair(idx, (int)r.BarcodeQuality()));
-            }
+            readsByZmw[zmwNum][refName].emplace_back(std::make_pair(idx, (int)r.BarcodeQuality()));
         }
     }
 
@@ -372,14 +359,11 @@ static int Runner(const PacBio::CLI::Results& options)
             }
         }
 
-        auto it = countsByBc.find(maxBc);
-        if (it == countsByBc.end()) it = countsByBc.insert({maxBc, {}}).first;
-
         // everybody from this holeNumber goes into the mode barcode
         int p = 0, n = 0;
         for (const auto& kv2 : kv.second) {
             for (const auto& r : kv2.second) {
-                it->second.emplace_back(r);
+                countsByBc[maxBc].emplace_back(r);
                 if (barcodeMapping.at(r.first) == maxBc) ++p;
                 ++n;
             }
