@@ -343,28 +343,28 @@ static int Runner(const PacBio::CLI::Results& options)
 
     // a datastructure for each bc as the mode of the mappedRefId to subread:
     //   (mappedRefId) -> [subread<bc, bq>]
-    std::map<std::string, std::vector<std::pair<int, int>>> countsByBc;
+    std::map<std::string, std::vector<std::pair<int, int>>> countsByRefName;
     // (holeNumber) -> (mappedRefId) -> [subread<bc, bq>]
     double byZmwAgreement = 0;
-    for (const auto& kv : readsByZmw) {
-        std::string maxBc;
+    for (const auto& zmwNum_refName_reads : readsByZmw) {
+        std::string maxRefName;
         int maxReads = 0;
 
         // (mappedRefId) -> [subread<bc, bq>]
-        for (const auto& kv2 : kv.second) {
-            const int nReads = kv2.second.size();
+        for (const auto& refName_reads : zmwNum_refName_reads.second) {
+            const int nReads = refName_reads.second.size();
             if (nReads > maxReads) {
-                maxBc = kv2.first;
+                maxRefName = refName_reads.first;
                 maxReads = nReads;
             }
         }
 
         // everybody from this holeNumber goes into the mode barcode
         int p = 0, n = 0;
-        for (const auto& kv2 : kv.second) {
-            for (const auto& r : kv2.second) {
-                countsByBc[maxBc].emplace_back(r);
-                if (barcodeMapping.at(r.first) == maxBc) ++p;
+        for (const auto& refName_reads : zmwNum_refName_reads.second) {
+            for (const auto& r : refName_reads.second) {
+                countsByRefName[maxRefName].emplace_back(r);
+                if (barcodeMapping.at(r.first) == maxRefName) ++p;
                 ++n;
             }
         }
@@ -374,11 +374,11 @@ static int Runner(const PacBio::CLI::Results& options)
 
     double byBcPPV = 0;
     int truePositive2 = 0;
-    for (const auto& kv : countsByBc) {
+    for (const auto& refName_subreads : countsByRefName) {
         int p = 0, n = 0;
 
-        for (const auto& r : kv.second) {
-            if (barcodeMapping.at(r.first) == kv.first) {
+        for (const auto& r : refName_subreads.second) {
+            if (barcodeMapping.at(r.first) == refName_subreads.first) {
                 ++truePositive2;
                 ++p;
             }
@@ -386,7 +386,7 @@ static int Runner(const PacBio::CLI::Results& options)
         }
         byBcPPV += (1.0 * p / n);
     }
-    byBcPPV /= countsByBc.size();
+    byBcPPV /= countsByRefName.size();
 
     const int nSubreads =
         std::accumulate(zmwSubreads.cbegin(), zmwSubreads.cend(), 0,
@@ -410,7 +410,7 @@ static int Runner(const PacBio::CLI::Results& options)
               << "PPV/bc                 : " << byBcPPV << std::endl
     //           << "PPV/sr1                : " << (1.0 * truePositive / (counter + shortCounter)) << std::endl
               << "PPV/sr2                : " << (1.0 * truePositive2 / nSubreads) << std::endl
-              << "#Refs                  : " << countsByBc.size() << std::endl;
+              << "#Refs                  : " << countsByRefName.size() << std::endl;
     // clang-format on
 
     // Determine minimal BQ needed for given minimal PPV
