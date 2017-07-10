@@ -37,17 +37,14 @@
 
 #pragma once
 
+#include <pbbam/BamRecord.h>
+#include <pbbam/DataSet.h>
+#include "pbbam/internal/QueryBase.h"
+
 #include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
-
-namespace BAM {
-namespace internal {
-class IQuery;
-}
-class BamRecord;
-}
 
 namespace StripedSmithWaterman {
 struct Alignment;
