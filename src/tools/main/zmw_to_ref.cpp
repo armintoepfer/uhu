@@ -408,8 +408,7 @@ static int Runner(const PacBio::CLI::Results& options)
               << std::endl
               << "%Mode/zmw              : " << byZmwAgreement << std::endl
               << "PPV/bc                 : " << byBcPPV << std::endl
-    //           << "PPV/sr1                : " << (1.0 * truePositive / (counter + shortCounter)) << std::endl
-              << "PPV/sr2                : " << (1.0 * truePositive2 / nSubreads) << std::endl
+              << "PPV/sr                 : " << (1.0 * truePositive2 / nMeasured) << std::endl
               << "#Refs                  : " << countsByRefName.size() << std::endl;
     // clang-format on
 
