@@ -132,6 +132,7 @@ struct BarcodeHitPair
 
 struct Summary
 {
+    Summary(bool perReadMode) : PerReadMode(perReadMode) {}
     std::atomic_int NumZMWs{0};
     std::atomic_int BelowNumPasses{0};
     std::atomic_int BelowMinLength{0};
@@ -142,6 +143,8 @@ struct Summary
     int AsymmetricCounts = 0;
     std::atomic_int SubreadBelowMinLength{0};
     std::atomic_int SubreadAboveMinLength{0};
+
+    const bool PerReadMode;
 
     operator std::string() const;
 };

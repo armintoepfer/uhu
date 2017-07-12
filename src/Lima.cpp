@@ -259,22 +259,40 @@ void AlignUtils::SWComputeMatrix(const char* const query, const int32_t M, const
 Summary::operator std::string() const
 {
     std::stringstream summaryStream;
-    summaryStream << "ZMWs input                    : " << NumZMWs << std::endl;
-    summaryStream << "ZMWs above all thresholds (A) : " << AboveThresholds << std::endl;
-    summaryStream << "ZMWs below any threshold  (B) : " << NumZMWs - AboveThresholds << std::endl;
-    summaryStream << std::endl;
-    summaryStream << "Marginals for (B)" << std::endl;
-    summaryStream << "ZMWs below length threshold   : " << BelowMinLength << std::endl;
-    summaryStream << "ZMWs below score threshold    : " << BelowMinScore << std::endl;
-    summaryStream << "ZMWs below passes threshold   : " << BelowNumPasses << std::endl;
-    summaryStream << std::endl;
-    summaryStream << "For (A)" << std::endl;
-    summaryStream << "ZMWs w/ same barcode          : " << SymmetricCounts << std::endl;
-    summaryStream << "ZMWs w/ different barcodes    : " << AsymmetricCounts << std::endl;
-    summaryStream << std::endl;
-    summaryStream << "For (A)" << std::endl;
-    summaryStream << "Reads above length            : " << SubreadAboveMinLength << std::endl;
-    summaryStream << "Reads below length            : " << SubreadBelowMinLength << std::endl;
+    if (!PerReadMode) {
+        summaryStream << "ZMWs input                    : " << NumZMWs << std::endl;
+        summaryStream << "ZMWs above all thresholds (A) : " << AboveThresholds << std::endl;
+        summaryStream << "ZMWs below any threshold  (B) : " << NumZMWs - AboveThresholds
+                      << std::endl;
+        summaryStream << std::endl;
+        summaryStream << "Marginals for (B)" << std::endl;
+        summaryStream << "ZMWs below length threshold   : " << BelowMinLength << std::endl;
+        summaryStream << "ZMWs below score threshold    : " << BelowMinScore << std::endl;
+        summaryStream << "ZMWs below passes threshold   : " << BelowNumPasses << std::endl;
+        summaryStream << std::endl;
+        summaryStream << "For (A)" << std::endl;
+        summaryStream << "ZMWs w/ same barcode          : " << SymmetricCounts << std::endl;
+        summaryStream << "ZMWs w/ different barcodes    : " << AsymmetricCounts << std::endl;
+        summaryStream << std::endl;
+        summaryStream << "For (A)" << std::endl;
+        summaryStream << "Reads above length            : " << SubreadAboveMinLength << std::endl;
+        summaryStream << "Reads below length            : " << SubreadBelowMinLength << std::endl;
+    } else {
+        summaryStream << "Reads input                    : " << NumZMWs << std::endl;
+        summaryStream << "Reads above all thresholds (A) : " << AboveThresholds << std::endl;
+        summaryStream << "Reads below any threshold  (B) : " << NumZMWs - AboveThresholds
+                      << std::endl;
+        summaryStream << std::endl;
+        summaryStream << "Marginals for (B)" << std::endl;
+        summaryStream << "Reads below length threshold   : " << BelowMinLength << std::endl;
+        summaryStream << "Reads below score threshold    : " << BelowMinScore << std::endl;
+        summaryStream << "Reads below passes threshold   : " << BelowNumPasses << std::endl;
+        summaryStream << std::endl;
+        summaryStream << "For (A)" << std::endl;
+        summaryStream << "Reads w/ same barcode          : " << SymmetricCounts << std::endl;
+        summaryStream << "Reads w/ different barcodes    : " << AsymmetricCounts << std::endl;
+        summaryStream << std::endl;
+    }
     return summaryStream.str();
 }
 }
