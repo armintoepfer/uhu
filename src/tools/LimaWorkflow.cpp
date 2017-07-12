@@ -428,7 +428,7 @@ void LimaWorkflow::Process(
         std::atomic_int threadCount(0);
 
         std::string prefix = AdvancedFileUtils::FilePrefixInfix(datasetPath_type.first);
-        Summary summary;
+        Summary summary(settings.PerRead);
         // Individual queue per dataset
         PacBio::Parallel::WorkQueue<std::vector<TaskResult>> workQueue(settings.NumThreads);
         std::future<void> workerThread =
