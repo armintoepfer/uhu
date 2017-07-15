@@ -70,7 +70,5 @@ if (UHU_build_bin)
         set_target_properties(uhutools PROPERTIES LINK_FLAGS ${LOCAL_LINK_FLAGS})
     endif()
 
-    create_exe(lima)
     create_exe(zmw_stats)
-    create_exe(zulu)
 endif()

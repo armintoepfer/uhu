@@ -6,11 +6,16 @@
 
 ***
 
-## TOOLS
+## SANDBOX TOOLS
 
-- [Demultiplex PacBio Reads `lima`](doc/LIMA.md)
-- [Barcode Validation Tool `zulu`](doc/ZULU.md)
 - [Extract ZMW Stats `zmw_stats`](doc/ZMW_STATS.md)
+
+## PRODUCTIZED
+### LIMA
+<img src="doc/img/lima.png" alt="Logo of Lima" width="50px"/>
+
+### ZULU
+<img src="doc/img/zulu.png" alt="Logo of Zulu" width="50px"/>
 
 ## INSTALL
 
