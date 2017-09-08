@@ -12,7 +12,7 @@
 
 ## PRODUCTIZED
 ### LIMA
-<img src="doc/img/lima.png" alt="Logo of Lima" width="50px"/>
+<img src="doc/img/lima.png" alt="Logo of Lima" width="50px"/> [pacificbiosciences/barcoding](https://github.com/pacificbiosciences/barcoding)
 
 ### ZULU
 <img src="doc/img/zulu.png" alt="Logo of Zulu" width="50px"/>
